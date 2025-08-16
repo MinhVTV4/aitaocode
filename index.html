@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prototype Động - Sửa code bất kỳ với AI (v45.2 - Final Bug Fix)</title>
+    <title>Prototype Động - Sửa code bất kỳ với AI (v45.4 - Strict Plan Execution)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -407,7 +407,7 @@
                 
                 try {
                     // Cấu hình model mặc định (không có tools)
-                    aiModel = getGenerativeModel(getAI(app), { model: "gemini-1.5-flash" });
+                    aiModel = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
                     statusEl.textContent = "Hệ thống đã sẵn sàng.";
                 } catch (e) {
                     statusEl.textContent = `Lỗi khởi tạo AI: ${e.message}`;
@@ -1224,7 +1224,14 @@
                 const selectedText = monacoEditor.getModel().getValueInRange(selection);
                 const attachedFilesContext = getAttachedFilesContext();
 
-                const taskDescription = `Dựa vào cuộc thảo luận và ngữ cảnh dự án, hãy sử dụng các công cụ có sẵn để thực hiện yêu cầu của người dùng.`;
+                // --- START: Sửa lỗi Prompt ---
+                const taskDescription = `NHIỆM VỤ: Chuyển đổi KẾ HOẠCH đã được cung cấp thành một danh sách các lệnh gọi hàm (function calls).
+QUY TẮC BẮT BUỘC:
+1.  Bạn PHẢI duyệt qua TỪNG BƯỚC (Step) trong KẾ HOẠCH.
+2.  Với MỖI BƯỚC, bạn PHẢI tạo ra một lệnh gọi hàm (function call) tương ứng.
+3.  Kết quả cuối cùng của bạn PHẢI là một danh sách chứa TẤT CẢ các lệnh gọi hàm được tạo ra từ kế hoạch.
+4.  KHÔNG được bỏ sót bất kỳ bước nào. KHÔNG được trả lời bằng văn bản.`;
+                // --- END: Sửa lỗi Prompt ---
                 
                 let planContext = '';
                 if (currentAiPlan) {
@@ -1259,7 +1266,7 @@ ${taskDescription}`;
                 }
 
                 const modelWithTools = getGenerativeModel(getAI(app), { 
-                    model: "gemini-1.5-flash",
+                    model: "gemini-2.5-flash",
                     ...availableTools
                 });
 
@@ -1845,6 +1852,7 @@ ${taskDescription}`;
             showLoader("AI đang tạo dự án của bạn...");
 
             try {
+                const contentGenerationModel = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
                 const prompt = `Dựa trên toàn bộ cuộc trò chuyện sau, hãy tạo ra code cho một dự án web hoàn chỉnh.
                 
                 Lịch sử trò chuyện:
@@ -1855,9 +1863,9 @@ ${taskDescription}`;
                 2. Tạo ra nội dung code đầy đủ cho 3 tệp: 'index.html', 'src/css/style.css', và 'src/js/script.js'.
                 3. Đảm bảo các tệp được liên kết với nhau đúng cách trong file HTML.
                 4. Trả về một đối tượng JSON duy nhất có cấu trúc như sau: { "index.html": "...", "src/css/style.css": "...", "src/js/script.js": "..." }.
-                **QUAN TRỌNG:** Chỉ trả về đối tượng JSON, không có bất kỳ văn bản hay giải thích nào khác.`;
+                **QUAN TRỌNG:** Chỉ trả về đối tượng JSON, không có bất kỳ văn bản hay giải thích nào khác, được bao bọc trong \`\`\`json ... \`\`\`.`;
 
-                const result = await aiModel.generateContent(prompt);
+                const result = await contentGenerationModel.generateContent(prompt);
                 const aiResponse = parseJsonResponse(result.response.text());
                 
                 if (!aiResponse['index.html'] || !aiResponse['src/css/style.css'] || !aiResponse['src/js/script.js']) {
@@ -1974,6 +1982,7 @@ ${taskDescription}`;
             showLoader("AI đang tái tạo lại file...");
 
             try {
+                const contentGenerationModel = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
                 let projectContext = '';
                 Object.entries(projectModels).forEach(([path, model]) => {
                     projectContext += `--- START OF ${path} ---\n${model.getValue()}\n--- END OF ${path} ---\n\n`;
@@ -1996,7 +2005,7 @@ ${taskDescription}`;
                 3. Trả về một đối tượng JSON duy nhất, trong đó key là đường dẫn file và value là toàn bộ nội dung mới của file đó. Ví dụ: { "src/js/script.js": "...", "src/css/style.css": "..." }
                 **CRITICAL: Your entire response must be ONLY the JSON object, wrapped in \`\`\`json ... \`\`\`. No extra text outside the JSON block.**`;
                 
-                const result = await aiModel.generateContent(prompt);
+                const result = await contentGenerationModel.generateContent(prompt);
                 const regeneratedFiles = parseJsonResponse(result.response.text());
 
                 let filesUpdated = 0;
