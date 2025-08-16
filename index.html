@@ -1,0 +1,2124 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prototype Động - Sửa code bất kỳ với AI (v45.0 - Final Upgrade)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .spinner { border: 3px solid rgba(255, 255, 255, 0.3); border-left-color: #fff; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none; }
+        .file-explorer-item { display: flex; align-items: center; padding: 4px 8px; cursor: pointer; border-radius: 4px; user-select: none; }
+        .file-explorer-item:hover { background-color: #eef2ff; }
+        .file-explorer-item.active { background-color: #c7d2fe; }
+        .file-explorer-item svg { width: 16px; height: 16px; margin-right: 8px; flex-shrink: 0; }
+        .folder-arrow { transition: transform 0.1s linear; }
+        .folder-arrow.open { transform: rotate(90deg); }
+        #contextMenu { position: absolute; z-index: 1000; background-color: white; border: 1px solid #e5e7eb; border-radius: 0.375rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 0.5rem 0; min-width: 150px; }
+        .context-menu-item { display: block; width: 100%; padding: 0.5rem 1rem; font-size: 0.875rem; text-align: left; background: none; border: none; cursor: pointer;}
+        .context-menu-item:hover { background-color: #f3f4f6; }
+        
+        .loader-spin {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4f46e5;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        .chat-bubble { max-width: 80%; padding: 0.75rem 1rem; border-radius: 1rem; margin-bottom: 0.5rem; word-wrap: break-word; }
+        .chat-bubble-user { background-color: #4338ca; color: white; align-self: flex-end; border-bottom-right-radius: 0.25rem; }
+        .chat-bubble-ai { background-color: #e5e7eb; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 0.25rem; }
+        .chat-bubble-ai pre, #aiPlanContainer pre, #modalContent pre { background-color: #1f2937; color: #e5e7eb; padding: 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem; font-size: 0.875rem; }
+        .chat-bubble-ai code, #aiPlanContainer code, #modalContent code { font-family: monospace; }
+        .chat-bubble-ai ul, .chat-bubble-ai ol, #aiPlanContainer ul, #aiPlanContainer ol, #modalContent ul, #modalContent ol { margin-left: 1.25rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
+        .chat-bubble-ai p:last-child, #aiPlanContainer p:last-child, #modalContent p:last-child { margin-bottom: 0; }
+        #modalContent h1, #modalContent h2, #modalContent h3 { font-weight: bold; margin-top: 1rem; margin-bottom: 0.5rem;}
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full bg-white p-8 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Đăng nhập / Đăng ký</h2>
+            <div id="auth-error" class="text-red-500 text-sm mb-4 text-center h-4"></div>
+            <div class="space-y-4">
+                <input id="email-input" type="email" placeholder="Email" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input id="password-input" type="password" placeholder="Mật khẩu" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <div class="flex gap-4">
+                    <button id="login-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Đăng nhập</button>
+                    <button id="register-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg">Đăng ký</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application (hidden by default) -->
+    <div id="main-app" class="hidden p-4 md:p-8">
+        <div class="max-w-screen-2xl mx-auto bg-white p-6 md:p-8 rounded-xl shadow-xl">
+            <header class="mb-6 pb-4 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800">Prototype Động: <span id="project-name-display">Dự án Mới</span></h1>
+                    <p id="user-email" class="text-sm text-gray-500 mt-1"></p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button id="new-project-btn" class="bg-yellow-400 hover:bg-yellow-500 text-gray-800 font-bold py-2 px-4 rounded-lg">Dự án Mới (AI)</button>
+                    <button id="save-project-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Lưu dự án</button>
+                    <button id="load-project-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Mở dự án</button>
+                    <button id="export-code-btn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg">Xuất file HTML</button>
+                    <button id="logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Đăng xuất</button>
+                </div>
+            </header>
+
+            <div class="grid grid-cols-1 gap-8">
+                <div class="flex flex-col">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-2">1. Dự án</h2>
+                    <div class="flex flex-grow border border-gray-300 rounded-lg shadow-md min-h-[600px]">
+                        <div id="fileExplorer" class="w-1/3 max-w-xs bg-gray-50 p-2 border-r border-gray-300 overflow-y-auto"></div>
+                        <div id="editorContainer" class="flex-grow"></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col">
+                    <div class="bg-indigo-50 p-6 rounded-lg border border-indigo-200 h-full flex flex-col">
+                        <h2 class="text-xl font-semibold text-gray-700">2. Trợ lý Chỉnh sửa AI</h2>
+                        <p class="text-sm text-gray-500 mb-4">Thảo luận với AI để thực hiện các thay đổi trên dự án hiện tại.</p>
+                        
+                        <div id="modificationChatHistory" class="bg-white p-3 border rounded-md overflow-y-auto mb-4 flex flex-col gap-2 h-[36rem]"></div>
+                        
+                        <div class="mt-auto">
+                             <textarea id="modificationChatInput" rows="2" class="w-full p-2 border rounded-md" placeholder="Ví dụ: 'Tạo một ứng dụng Todo List đơn giản'"></textarea>
+                            
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Đính kèm tệp (để cung cấp thêm ngữ cảnh cho AI)</label>
+                                <div class="flex items-center">
+                                    <label class="w-full flex items-center px-4 py-2 bg-white text-indigo-600 rounded-lg shadow-sm tracking-wide uppercase border border-indigo-500 cursor-pointer hover:bg-indigo-600 hover:text-white">
+                                        <svg class="w-6 h-6 mr-3" fill="currentColor" xmlns="http://www.w.org/2000/svg" viewBox="0 0 20 20"><path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4 4-4-4h3v-4h2v4z" /></svg>
+                                        <span class="text-sm font-semibold">Chọn tệp...</span>
+                                        <input type='file' id="file-attachment-input" class="hidden" multiple />
+                                    </label>
+                                </div>
+                                <div id="attached-files-list" class="mt-2 flex flex-wrap gap-2"></div>
+                            </div>
+                             
+                             <div class="mt-4 flex items-center">
+                                <input id="focus-mode-checkbox" type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                <label for="focus-mode-checkbox" class="ml-2 block text-sm text-gray-900">Chỉ làm việc trên vùng đã chọn (nếu có)</label>
+                            </div>
+                             <!-- START: Giai đoạn 4 - Dọn dẹp UI -->
+                             <div class="mt-2 grid grid-cols-1 sm:grid-cols-5 gap-4">
+                                <button id="modificationDiscussBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Thảo luận</span><div class="spinner ml-3 hidden"></div></button>
+                                <button id="planBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Xem Kế hoạch</span><div class="spinner ml-3 hidden"></div></button>
+                                <button id="debugBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center">Gỡ lỗi</button>
+                                <button id="modificationGenerateBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Tạo Đề xuất</span><div class="spinner ml-3 hidden"></div></button>
+                                <button id="regenerateFileBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Tái tạo File</span><div class="spinner ml-3 hidden"></div></button>
+                            </div>
+                             <!-- END: Giai đoạn 4 -->
+                        </div>
+                        
+                        <div id="aiPlanSection" class="hidden mt-8">
+                            <h2 class="text-xl font-semibold text-gray-700 mb-2">3. Kế hoạch của AI</h2>
+                            <div id="aiPlanContainer" class="bg-white p-4 rounded-lg shadow-inner border border-gray-200 max-h-96 overflow-y-auto"></div>
+                        </div>
+
+                        <h2 class="text-xl font-semibold text-gray-700 mt-8 mb-2">4. Đề xuất của AI</h2>
+                        <div id="aiResponseContainer" class="overflow-y-auto min-h-[12rem] max-h-[48rem]">
+                            <p id="aiResponsePlaceholder" class="text-gray-500">Đề xuất của AI sẽ xuất hiện ở đây...</p>
+                        </div>
+                        <h2 class="text-xl font-semibold text-gray-700 mt-8 mb-2">5. Trạng thái</h2>
+                        <div id="status" class="w-full bg-white p-4 rounded-md shadow-inner border text-gray-600 min-h-[50px]"></div>
+                    </div>
+                </div>
+                <div class="flex flex-col mt-8"> 
+                    <h2 class="text-xl font-semibold text-gray-700 mb-2">6. Xem trước trực quan</h2>
+                    <button id="openModalBtn" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg shadow-md">Xem trước</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="contextMenu" class="hidden"></div>
+    <div id="previewModal" class="hidden fixed inset-0 z-50 overflow-y-auto overflow-x-hidden flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div class="relative w-full h-[90vh] max-w-7xl mx-auto p-4 flex flex-col">
+            <div class="relative bg-white rounded-lg shadow-xl flex flex-col flex-grow">
+                <button type="button" id="closeModalBtn" class="absolute top-3 right-2.5 text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+                </button>
+                <div class="p-6 flex flex-col flex-grow">
+                    <div id="previewControls" class="flex justify-center mb-4 space-x-4">
+                        <button id="desktopViewBtn" class="px-5 py-2 rounded-lg shadow-md">Desktop</button>
+                        <button id="mobileViewBtn" class="px-5 py-2 rounded-lg shadow-md">Mobile</button>
+                    </div>
+                    <div id="previewFrameContainer" class="flex-grow flex justify-center items-center overflow-auto bg-gray-50 rounded-lg p-4">
+                        <iframe id="previewFrame" title="Visual Preview" class="border border-gray-300 rounded-lg shadow-md"></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="newProjectChatModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col h-[90vh]">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-xl font-semibold text-gray-800">Trợ lý Sáng tạo Dự án</h3>
+                <button id="closeNewProjectModalBtn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div id="newProjectChatHistory" class="p-6 flex-grow overflow-y-auto flex flex-col gap-4"></div>
+            <div class="p-4 border-t bg-gray-50">
+                <textarea id="newProjectChatInput" rows="2" class="w-full p-2 border rounded-md" placeholder="Mô tả ý tưởng của bạn..."></textarea>
+                <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button id="newProjectDiscussBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Thảo luận</span><div class="spinner ml-3 hidden"></div></button>
+                    <button id="newProjectGenerateBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Tạo Dự án</span><div class="spinner ml-3 hidden"></div></button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="loadProjectModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="load-modal-title" class="text-xl font-semibold text-gray-800">Mở Dự án</h3>
+                <button id="closeLoadModalBtn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div id="load-modal-content" class="p-6 max-h-96 overflow-y-auto"></div>
+        </div>
+    </div>
+    <div id="genericModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 id="modalTitle" class="text-xl font-semibold text-gray-800"></h3>
+                <button id="modalCloseBtn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div id="modalContent" class="p-6 space-y-4 max-h-[60vh] overflow-y-auto"></div>
+            <div id="modalActions" class="flex justify-end p-4 bg-gray-50 border-t rounded-b-lg space-x-3"></div>
+        </div>
+    </div>
+    <div id="debugModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-gray-900 bg-opacity-75">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-xl font-semibold text-gray-800">Trợ lý Gỡ lỗi</h3>
+                <button id="closeDebugModalBtn" class="text-gray-400 hover:text-gray-600">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-sm text-gray-600">Dán toàn bộ thông báo lỗi từ console của trình duyệt vào đây. AI sẽ phân tích nó cùng với file đang mở để tìm ra nguyên nhân và đề xuất cách sửa.</p>
+                <textarea id="errorInput" rows="8" class="w-full p-2 border rounded-md font-mono text-sm" placeholder="TypeError: Cannot read properties of null..."></textarea>
+            </div>
+            <div class="flex justify-end p-4 bg-gray-50 border-t rounded-b-lg space-x-3">
+                 <button id="cancelDebugBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Hủy</button>
+                 <button id="analyzeErrorBtn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">Phân tích Lỗi</button>
+            </div>
+        </div>
+    </div>
+    <div id="fullScreenLoader" class="hidden fixed inset-0 z-[200] flex items-center justify-center bg-white bg-opacity-80">
+        <div class="flex flex-col items-center">
+            <div class="loader-spin"></div>
+            <p id="loaderText" class="mt-4 text-lg font-semibold text-gray-700">Đang xử lý...</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-app.js";
+        import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-ai.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, getDoc, query, where, orderBy, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDt6KZTLJ5ItNShxAPlpKKHC8eHiIBSjmY",
+            authDomain: "aicodepro-lien.firebaseapp.com",
+            projectId: "aicodepro-lien",
+            storageBucket: "aicodepro-lien.firebasestorage.app",
+            messagingSenderId: "277847908656",
+            appId: "1:277847908656:web:77eb210b8e2b2b7dbca8f5"
+        };
+        
+        // --- START: Giai đoạn 3 - Hoàn thiện bộ công cụ ---
+        const availableTools = {
+            tools: [{
+                functionDeclarations: [
+                    {
+                        name: "create_file",
+                        description: "Tạo một tệp tin mới trong dự án.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file: { type: "STRING", description: "Đường dẫn đầy đủ của tệp cần tạo, ví dụ: 'src/css/style.css'" },
+                                newCode: { type: "STRING", description: "Nội dung ban đầu của tệp mới." }
+                            },
+                            required: ["file", "newCode"]
+                        }
+                    },
+                    {
+                        name: "modify_code",
+                        description: "Tìm và thay thế một đoạn code đã có trong một tệp được chỉ định.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file: { type: "STRING", description: "Đường dẫn của tệp cần sửa đổi." },
+                                oldCode: { type: "STRING", description: "Đoạn code gốc cần được thay thế. Cần đủ lớn để đảm bảo tính duy nhất." },
+                                newCode: { type: "STRING", description: "Đoạn code mới sẽ thay thế cho code cũ." },
+                                expectedStartLine: { type: "INTEGER", description: "Tham số tùy chọn. Dòng dự kiến nơi oldCode bắt đầu." }
+                            },
+                            required: ["file", "oldCode", "newCode"]
+                        }
+                    },
+                    {
+                        name: "add_code",
+                        description: "Thêm một khối code mới vào một vị trí tương đối so với một khối code đã có (anchor).",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file: { type: "STRING", description: "Đường dẫn của tệp cần thêm code." },
+                                newCode: { type: "STRING", description: "Đoạn code mới cần thêm." },
+                                anchorCode: { type: "STRING", description: "Đoạn code đã có để làm mốc. Code mới sẽ được thêm vào trước hoặc sau khối này." },
+                                position: { type: "STRING", description: "Vị trí thêm code, có thể là 'after' (sau) hoặc 'before' (trước) anchorCode." },
+                                expectedStartLine: { type: "INTEGER", description: "Tham số tùy chọn. Dòng dự kiến nơi anchorCode bắt đầu." }
+                            },
+                            required: ["file", "newCode", "anchorCode", "position"]
+                        }
+                    },
+                    {
+                        name: "remove_code",
+                        description: "Xóa một đoạn code khỏi một tệp.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file: { type: "STRING", description: "Đường dẫn của tệp chứa đoạn code cần xóa." },
+                                codeToRemove: { type: "STRING", description: "Đoạn code chính xác cần được xóa." },
+                                expectedStartLine: { type: "INTEGER", description: "Tham số tùy chọn. Dòng dự kiến nơi codeToRemove bắt đầu." }
+                            },
+                            required: ["file", "codeToRemove"]
+                        }
+                    },
+                    {
+                        name: "inject_into_function",
+                        description: "Thêm code vào bên trong phần thân của một hàm đã có.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file: { type: "STRING", description: "Đường dẫn của tệp chứa hàm." },
+                                functionSignature: { type: "STRING", description: "Chữ ký đầy đủ của hàm (ví dụ: 'function myFunction(param1, param2)')." },
+                                codeToInject: { type: "STRING", description: "Đoạn code cần chèn vào." },
+                                position: { type: "STRING", description: "Vị trí chèn, 'start' (đầu hàm) hoặc 'end' (cuối hàm, trước dấu '}' đóng)." }
+                            },
+                            required: ["file", "functionSignature", "codeToInject", "position"]
+                        }
+                    },
+                    {
+                        name: "rename_symbol",
+                        description: "Đổi tên một ký hiệu (biến, hàm, class) và cập nhật tất cả các tham chiếu đến nó trong phạm vi cho phép.",
+                        parameters: {
+                            type: "OBJECT",
+                            properties: {
+                                file_scope: { type: "ARRAY", description: "Một mảng các đường dẫn tệp nơi việc đổi tên sẽ diễn ra.", items: { type: "STRING" } },
+                                old_name: { type: "STRING", description: "Tên cũ của ký hiệu." },
+                                new_name: { type: "STRING", description: "Tên mới của ký hiệu." }
+                            },
+                            required: ["file_scope", "old_name", "new_name"]
+                        }
+                    }
+                ]
+            }]
+        };
+        // --- END: Giai đoạn 3 ---
+
+        // --- App State ---
+        let monacoEditor, aiModel, auth, db;
+        let activeFilePath = 'index.html';
+        let projectStructure = {};
+        let projectModels = {};
+        let currentUser = null;
+        let isEditorInitialized = false;
+        let undoStacks = {};
+        let currentProjectId = null;
+        let currentProjectName = null;
+        let activeDiffEditors = [];
+        let newProjectChatHistory = [];
+        let modificationChatHistory = [];
+        let attachedFiles = [];
+        let currentAiPlan = null;
+
+        // --- DOM Elements ---
+        const authScreen = document.getElementById('auth-screen');
+        const mainApp = document.getElementById('main-app');
+        const fileExplorer = document.getElementById('fileExplorer');
+        const editorContainer = document.getElementById('editorContainer');
+        const contextMenu = document.getElementById('contextMenu');
+        const statusEl = document.getElementById('status');
+        const openModalBtn = document.getElementById('openModalBtn');
+        const aiResponseContainer = document.getElementById('aiResponseContainer');
+        const aiResponsePlaceholder = document.getElementById('aiResponsePlaceholder');
+        const previewModal = document.getElementById('previewModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const desktopViewBtn = document.getElementById('desktopViewBtn');
+        const mobileViewBtn = document.getElementById('mobileViewBtn');
+        const focusModeCheckbox = document.getElementById('focus-mode-checkbox');
+        const newProjectChatModal = document.getElementById('newProjectChatModal');
+        const fileAttachmentInput = document.getElementById('file-attachment-input');
+        const attachedFilesList = document.getElementById('attached-files-list');
+        const planBtn = document.getElementById('planBtn');
+        const aiPlanSection = document.getElementById('aiPlanSection');
+        const aiPlanContainer = document.getElementById('aiPlanContainer');
+        const debugModal = document.getElementById('debugModal');
+        const debugBtn = document.getElementById('debugBtn');
+        const closeDebugModalBtn = document.getElementById('closeDebugModalBtn');
+        const cancelDebugBtn = document.getElementById('cancelDebugBtn');
+        const analyzeErrorBtn = document.getElementById('analyzeErrorBtn');
+        const errorInput = document.getElementById('errorInput');
+
+        // --- Firebase Initialization ---
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+        
+        // --- Auth Logic ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                authScreen.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                document.getElementById('user-email').textContent = `Chào, ${user.email}`;
+                if (!isEditorInitialized) {
+                    initializeEditorAndAI();
+                }
+            } else {
+                currentUser = null;
+                authScreen.classList.remove('hidden');
+                mainApp.classList.add('hidden');
+            }
+        });
+        
+        // --- Editor & App Initialization ---
+        function initializeEditorAndAI() {
+            statusEl.textContent = "Đang khởi tạo trình soạn thảo...";
+            require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+            require(['vs/editor/editor.main'], () => {
+                loadInitialProject();
+                monacoEditor = monaco.editor.create(editorContainer, {
+                    model: projectModels[activeFilePath],
+                    theme: 'vs-light',
+                    automaticLayout: true
+                });
+                renderFileExplorer();
+                updatePreview();
+                attachAppEventListeners();
+                
+                try {
+                    // Cấu hình model mặc định (không có tools)
+                    aiModel = getGenerativeModel(getAI(app), { model: "gemini-1.5-flash" });
+                    statusEl.textContent = "Hệ thống đã sẵn sàng.";
+                } catch (e) {
+                    statusEl.textContent = `Lỗi khởi tạo AI: ${e.message}`;
+                }
+                isEditorInitialized = true;
+            });
+        }
+
+        function loadInitialProject() {
+            Object.values(projectModels).forEach(model => model.dispose());
+            projectModels = {};
+            currentProjectId = null;
+            currentProjectName = "Dự án Mới";
+            updateProjectDisplay();
+
+            const sampleFiles = {
+                'index.html': `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <title>Dự án Mới</title>\n    <link rel="stylesheet" href="src/css/style.css">\n</head>\n<body>\n    <h1>Chào mừng!</h1>\n    <script src="src/js/script.js"><\/script>\n</body>\n</html>`,
+                'src/css/style.css': `body {\n    font-family: sans-serif;\n}`,
+                'src/js/script.js': `console.log("Hello World!");`
+            };
+            loadProjectFromData(sampleFiles);
+            resetModificationChat();
+        }
+
+        function loadProjectFromData(filesData) {
+            if (projectModels) {
+                Object.values(projectModels).forEach(model => model.dispose());
+            }
+            projectModels = {};
+            currentProjectId = null;
+            currentProjectName = "Dự án Mới";
+            updateProjectDisplay();
+
+            projectStructure = {
+                'index.html': { type: 'file' },
+                'src': { type: 'folder', isOpen: true, children: {
+                    'css': { type: 'folder', isOpen: true, children: { 'style.css': { type: 'file' } } },
+                    'js': { type: 'folder', isOpen: true, children: { 'script.js': { type: 'file' } } }
+                }}
+            };
+            
+            createModelsFromStructure(projectStructure, filesData);
+            activeFilePath = 'index.html';
+            if(monacoEditor) {
+                monacoEditor.setModel(projectModels[activeFilePath]);
+                renderFileExplorer();
+                updatePreview();
+            }
+        }
+
+        // --- Firestore Logic ---
+        async function saveProject() {
+            const files = {};
+            Object.entries(projectModels).forEach(([path, model]) => {
+                files[path] = model.getValue();
+            });
+
+            if (currentProjectId) {
+                const commitMessage = await showPrompt("Lưu phiên bản mới", "Nhập ghi chú cho phiên bản này:", "");
+                if (commitMessage === null) return;
+
+                showLoader("Đang lưu phiên bản...");
+                try {
+                    const projectRef = doc(db, "projects", currentProjectId);
+                    const projectSnap = await getDoc(projectRef);
+                    const currentVersion = projectSnap.data().latestVersion || 0;
+                    const newVersionNumber = currentVersion + 1;
+
+                    const versionRef = collection(db, "projects", currentProjectId, "versions");
+                    await addDoc(versionRef, {
+                        versionNumber: newVersionNumber,
+                        commitMessage: commitMessage,
+                        structure: JSON.stringify(projectStructure),
+                        files: files,
+                        createdAt: serverTimestamp()
+                    });
+
+                    await updateDoc(projectRef, {
+                        latestVersion: newVersionNumber,
+                        lastUpdatedAt: serverTimestamp()
+                    });
+                    
+                    statusEl.textContent = `Đã lưu phiên bản ${newVersionNumber} cho dự án "${currentProjectName}".`;
+                } catch (error) {
+                    console.error("Lỗi khi lưu phiên bản mới:", error);
+                    statusEl.textContent = "Lỗi khi lưu phiên bản mới.";
+                } finally {
+                    hideLoader();
+                }
+
+            } else {
+                const projectName = await showPrompt("Tạo dự án mới", "Nhập tên dự án:", "Dự án của tôi");
+                if (!projectName) return;
+
+                showLoader("Đang tạo dự án...");
+                try {
+                    const projectRef = await addDoc(collection(db, "projects"), {
+                        uid: currentUser.uid,
+                        name: projectName,
+                        createdAt: serverTimestamp(),
+                        lastUpdatedAt: serverTimestamp(),
+                        latestVersion: 1
+                    });
+
+                    const versionRef = collection(db, "projects", projectRef.id, "versions");
+                    await addDoc(versionRef, {
+                        versionNumber: 1,
+                        commitMessage: "Phiên bản đầu tiên",
+                        structure: JSON.stringify(projectStructure),
+                        files: files,
+                        createdAt: serverTimestamp()
+                    });
+
+                    currentProjectId = projectRef.id;
+                    currentProjectName = projectName;
+                    updateProjectDisplay();
+                    statusEl.textContent = `Đã tạo và lưu dự án "${projectName}" thành công.`;
+                } catch (error) {
+                    console.error("Lỗi khi tạo dự án mới:", error);
+                    statusEl.textContent = "Lỗi khi tạo dự án mới.";
+                } finally {
+                    hideLoader();
+                }
+            }
+        }
+
+        async function loadProjects() {
+            const modalContent = document.getElementById('load-modal-content');
+            modalContent.innerHTML = '<div class="flex justify-center"><div class="loader-spin"></div></div>';
+            document.getElementById('load-modal-title').textContent = "Mở Dự án";
+            document.getElementById('loadProjectModal').classList.remove('hidden');
+
+            const q = query(collection(db, "projects"), where("uid", "==", currentUser.uid), orderBy("lastUpdatedAt", "desc"));
+            const querySnapshot = await getDocs(q);
+            
+            modalContent.innerHTML = '';
+            if (querySnapshot.empty) {
+                modalContent.textContent = "Bạn chưa có dự án nào.";
+                return;
+            }
+            querySnapshot.forEach((doc) => {
+                const project = doc.data();
+                const div = document.createElement('div');
+                div.className = "p-2 hover:bg-gray-100 cursor-pointer rounded";
+                div.textContent = project.name;
+                div.onclick = () => showProjectVersions(doc.id, project.name);
+                modalContent.appendChild(div);
+            });
+        }
+
+        async function showProjectVersions(projectId, projectName) {
+            const modalContent = document.getElementById('load-modal-content');
+            modalContent.innerHTML = '<div class="flex justify-center"><div class="loader-spin"></div></div>';
+            document.getElementById('load-modal-title').textContent = `Phiên bản của "${projectName}"`;
+            
+            const backButton = document.createElement('button');
+            backButton.className = "mb-4 text-sm text-indigo-600 hover:underline";
+            backButton.textContent = "← Quay lại danh sách dự án";
+            backButton.onclick = loadProjects;
+            
+            const versionsList = document.createElement('div');
+            
+            modalContent.innerHTML = '';
+            modalContent.appendChild(backButton);
+            modalContent.appendChild(versionsList);
+            
+            const q = query(collection(db, "projects", projectId, "versions"), orderBy("versionNumber", "desc"));
+            const querySnapshot = await getDocs(q);
+            
+            if (querySnapshot.empty) {
+                versionsList.textContent = "Dự án này chưa có phiên bản nào.";
+                return;
+            }
+            querySnapshot.forEach((doc) => {
+                const version = doc.data();
+                const div = document.createElement('div');
+                div.className = "p-2 hover:bg-gray-100 cursor-pointer rounded border-b";
+                div.innerHTML = `
+                    <p class="font-semibold">Phiên bản ${version.versionNumber}</p>
+                    <p class="text-sm text-gray-600">${version.commitMessage}</p>
+                    <p class="text-xs text-gray-400">${version.createdAt ? version.createdAt.toDate().toLocaleString() : 'N/A'}</p>
+                `;
+                div.onclick = () => openProjectVersion(projectId, projectName, doc.id);
+                versionsList.appendChild(div);
+            });
+        }
+
+        async function openProjectVersion(projectId, projectName, versionId) {
+            document.getElementById('loadProjectModal').classList.add('hidden');
+            showLoader("Đang mở dự án...");
+            try {
+                const docRef = doc(db, "projects", projectId, "versions", versionId);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const versionData = docSnap.data();
+                    Object.values(projectModels).forEach(model => model.dispose());
+                    projectModels = {};
+
+                    projectStructure = JSON.parse(versionData.structure);
+                    createModelsFromStructure(projectStructure, versionData.files);
+                    
+                    currentProjectId = projectId;
+                    currentProjectName = projectName;
+                    updateProjectDisplay();
+
+                    activeFilePath = 'index.html';
+                    monacoEditor.setModel(projectModels[activeFilePath]);
+                    renderFileExplorer();
+                    updatePreview();
+                    resetModificationChat();
+                    statusEl.textContent = `Đã mở dự án "${projectName}", phiên bản ${versionData.versionNumber}.`;
+                } else {
+                    statusEl.textContent = "Không tìm thấy phiên bản dự án.";
+                }
+            } catch (error) {
+                console.error("Lỗi khi mở dự án:", error);
+                statusEl.textContent = `Lỗi khi mở dự án: ${error.message}`;
+            } finally {
+                hideLoader();
+            }
+        }
+        
+        function updateProjectDisplay() {
+            document.getElementById('project-name-display').textContent = currentProjectName;
+            const saveBtn = document.getElementById('save-project-btn');
+            if (currentProjectId) {
+                saveBtn.textContent = "Lưu phiên bản mới";
+            } else {
+                saveBtn.textContent = "Lưu dự án";
+            }
+        }
+
+        // --- Helper Functions ---
+        function createModelsFromStructure(structure, files, pathPrefix = '') {
+            Object.entries(structure).forEach(([name, item]) => {
+                const currentPath = pathPrefix ? `${pathPrefix}/${name}` : name;
+                if (item.type === 'file') {
+                    const model = monaco.editor.createModel(
+                        files[currentPath] || "",
+                        getLanguageForFile(currentPath)
+                    );
+                    model.onDidChangeContent(updatePreview);
+                    projectModels[currentPath] = model;
+                } else if (item.children) {
+                    createModelsFromStructure(item.children, files, currentPath);
+                }
+            });
+        }
+        
+        // --- Core Logic & File Management ---
+        function getLanguageForFile(filename) {
+            const extension = filename.split('.').pop();
+            switch (extension) {
+                case 'js': return 'javascript';
+                case 'css': return 'css';
+                case 'html': return 'html';
+                default: return 'plaintext';
+            }
+        }
+
+        function findItemAndParentByPath(path) {
+            if (!path) return { item: null, parent: null, key: null };
+            const parts = path.split('/');
+            let currentLevel = projectStructure;
+            let parent = { children: projectStructure };
+            let currentItem = null;
+
+            for (let i = 0; i < parts.length; i++) {
+                const key = parts[i];
+                if (!currentLevel || !currentLevel[key]) return { item: null, parent: null, key: null };
+                
+                if (i === parts.length - 1) {
+                    currentItem = currentLevel[key];
+                    parent = (i === 0) ? null : findItemByPath(parts.slice(0, i).join('/'))?.item;
+                    return { item: currentItem, parent: parent?.children || projectStructure, key: key };
+                }
+                currentLevel = currentLevel[key].children;
+            }
+            return { item: null, parent: null, key: null };
+        }
+
+        function findItemByPath(path) {
+            if (!path) return { item: projectStructure };
+            const parts = path.split('/');
+            let currentItem = projectStructure;
+            for (const part of parts) {
+                if (!currentItem) return { item: null };
+                currentItem = currentItem.children ? currentItem.children[part] : currentItem[part];
+            }
+            return { item: currentItem };
+        }
+        
+        function renderFileExplorer() {
+            fileExplorer.innerHTML = '';
+            const rootUl = document.createElement('ul');
+            
+            function createTree(structure, parentElement, pathPrefix = '') {
+                Object.entries(structure).forEach(([name, item]) => {
+                    const currentPath = pathPrefix ? `${pathPrefix}/${name}` : name;
+                    const li = document.createElement('li');
+                    li.dataset.path = currentPath;
+                    
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'file-explorer-item';
+                    itemDiv.dataset.path = currentPath;
+                    if (currentPath === activeFilePath) itemDiv.classList.add('active');
+                    
+                    if (item.type === 'folder') {
+                        itemDiv.innerHTML = `<svg class="folder-arrow ${item.isOpen ? 'open' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg><svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path></svg><span>${name}</span>`;
+                        itemDiv.addEventListener('click', (e) => { e.stopPropagation(); toggleFolder(item); });
+                        li.appendChild(itemDiv);
+                        if (item.isOpen && item.children) {
+                            const childrenUl = document.createElement('ul');
+                            childrenUl.style.paddingLeft = '16px';
+                            createTree(item.children, childrenUl, currentPath);
+                            li.appendChild(childrenUl);
+                        }
+                    } else {
+                        itemDiv.innerHTML = `<svg style="margin-left: 16px;" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h2a2 2 0 002-2V4a2 2 0 00-2-2H9z"></path><path d="M4 12a2 2 0 012-2h1v4a2 2 0 002 2h1v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-4z"></path></svg><span>${name}</span>`;
+                        itemDiv.addEventListener('click', (e) => { e.stopPropagation(); switchFile(currentPath); });
+                        li.appendChild(itemDiv);
+                    }
+                    parentElement.appendChild(li);
+                });
+            }
+            createTree(projectStructure, rootUl);
+            fileExplorer.appendChild(rootUl);
+        }
+
+        function showContextMenu(e) {
+            e.preventDefault();
+            const target = e.target.closest('[data-path], #fileExplorer');
+            if (!target) return;
+            const path = target.dataset.path || '';
+
+            contextMenu.innerHTML = ''; // Clear previous menu
+
+            const { item } = findItemAndParentByPath(path);
+            const targetType = item ? item.type : 'root';
+
+            // Helper function to create a menu item button
+            const createMenuItem = (text, onClickHandler) => {
+                const button = document.createElement('button');
+                button.className = 'context-menu-item';
+                button.textContent = text;
+                button.addEventListener('click', () => {
+                    hideContextMenu();
+                    onClickHandler();
+                });
+                return button;
+            };
+
+            if (targetType === 'file') {
+                contextMenu.appendChild(createMenuItem('Đổi tên', () => handleRename(path)));
+                contextMenu.appendChild(createMenuItem('Xóa', () => handleDelete(path)));
+            } else { // Folder or root
+                contextMenu.appendChild(createMenuItem('Tệp mới', () => handleNewFile(path)));
+                contextMenu.appendChild(createMenuItem('Thư mục mới', () => handleNewFolder(path)));
+
+                if (targetType === 'folder') {
+                    const separator = document.createElement('div');
+                    separator.className = 'my-1 h-px bg-gray-200';
+                    contextMenu.appendChild(separator);
+                    contextMenu.appendChild(createMenuItem('Đổi tên', () => handleRename(path)));
+                    contextMenu.appendChild(createMenuItem('Xóa', () => handleDelete(path)));
+                }
+            }
+            
+            contextMenu.style.left = `${e.pageX}px`;
+            contextMenu.style.top = `${e.pageY}px`;
+            contextMenu.classList.remove('hidden');
+        }
+
+
+        function hideContextMenu() {
+            contextMenu.classList.add('hidden');
+        }
+
+        // --- File Operations ---
+        async function handleNewFile(parentPath) {
+            const filename = await showPrompt("Tạo tệp mới", "Nhập tên tệp:", "new-file.js");
+            if (!filename) return;
+
+            const newPath = parentPath ? `${parentPath}/${filename}` : filename;
+            const { item: parentItem } = findItemByPath(parentPath);
+            const targetChildren = parentPath ? parentItem.children : projectStructure;
+
+            if (targetChildren[filename]) {
+                showAlert("Lỗi", "Một tệp hoặc thư mục với tên này đã tồn tại.");
+                return;
+            }
+            
+            targetChildren[filename] = { type: 'file' };
+            projectModels[newPath] = monaco.editor.createModel("", getLanguageForFile(filename));
+            projectModels[newPath].onDidChangeContent(updatePreview);
+            renderFileExplorer();
+            switchFile(newPath);
+        };
+
+        async function handleNewFolder(parentPath) {
+            const foldername = await showPrompt("Tạo thư mục mới", "Nhập tên thư mục:", "new-folder");
+            if (!foldername) return;
+
+            const { item: parentItem } = findItemByPath(parentPath);
+            const targetChildren = parentPath ? parentItem.children : projectStructure;
+
+            if (targetChildren[foldername]) {
+                showAlert("Lỗi", "Một tệp hoặc thư mục với tên này đã tồn tại.");
+                return;
+            }
+
+            targetChildren[foldername] = { type: 'folder', isOpen: true, children: {} };
+            renderFileExplorer();
+        };
+
+        async function handleRename(path) {
+            const { item, parent, key } = findItemAndParentByPath(path);
+            if (!item) return;
+
+            const newName = await showPrompt("Đổi tên", "Nhập tên mới:", key);
+            if (!newName || newName === key) return;
+            
+            if (parent[newName]) {
+                showAlert("Lỗi", "Một tệp hoặc thư mục với tên này đã tồn tại.");
+                return;
+            }
+
+            parent[newName] = item;
+            delete parent[key];
+
+            if (item.type === 'file') {
+                const newPath = path.substring(0, path.lastIndexOf('/') + 1) + newName;
+                projectModels[newPath] = projectModels[path];
+                delete projectModels[path];
+                if(activeFilePath === path) activeFilePath = newPath;
+            } else { 
+                function updateChildPaths(oldPathPrefix, newPathPrefix) {
+                    Object.keys(projectModels).forEach(p => {
+                        if (p.startsWith(oldPathPrefix + '/')) {
+                            const newP = newPathPrefix + p.substring(oldPathPrefix.length);
+                            projectModels[newP] = projectModels[p];
+                            delete projectModels[p];
+                            if(activeFilePath === p) activeFilePath = newP;
+                        }
+                    });
+                }
+                const newPath = path.substring(0, path.lastIndexOf('/') + 1) + newName;
+                updateChildPaths(path, newPath);
+            }
+            
+            renderFileExplorer();
+        };
+
+        async function handleDelete(path, skipConfirm = false) {
+            const { item, parent, key } = findItemAndParentByPath(path);
+            if (!item) return;
+            
+            const confirmed = skipConfirm ? true : await showConfirm("Xác nhận xóa", `Bạn có chắc muốn xóa "${key}"? Hành động này không thể hoàn tác.`);
+            if (!confirmed) return;
+
+            delete parent[key];
+
+            function deleteRecursive(p) {
+                if (projectModels[p]) {
+                    projectModels[p].dispose();
+                    delete projectModels[p];
+                }
+                Object.keys(projectModels).forEach(childPath => {
+                    if (childPath.startsWith(p + '/')) {
+                        projectModels[childPath].dispose();
+                        delete projectModels[childPath];
+                    }
+                });
+            }
+            deleteRecursive(path);
+
+            if (activeFilePath.startsWith(path)) {
+                switchFile('index.html');
+            }
+
+            renderFileExplorer();
+        };
+
+        function toggleFolder(folderItem) {
+            folderItem.isOpen = !folderItem.isOpen;
+            renderFileExplorer();
+        }
+
+        function switchFile(filePath) {
+            if (!projectModels[filePath]) {
+                console.error(`Model not found for path: ${filePath}`);
+                return;
+            }
+            activeFilePath = filePath;
+            monacoEditor.setModel(projectModels[filePath]);
+            renderFileExplorer();
+        }
+
+        // --- Preview & Export Logic ---
+        function getBuiltHtml() {
+            let htmlContent = projectModels['index.html']?.getValue() || '';
+            
+            const linkRegex = /<link\s+.*?href="([^"]+)"[^>]*>/g;
+            const scriptRegex = /<script\s+.*?src="([^"]+)"[^>]*><\/script>/g;
+
+            htmlContent = htmlContent.replace(linkRegex, (match, href) => {
+                const cssContent = projectModels[href]?.getValue();
+                return cssContent ? `<style>\n${cssContent}\n</style>` : match;
+            });
+
+            htmlContent = htmlContent.replace(scriptRegex, (match, src) => {
+                if (!src) return match;
+                const jsContent = projectModels[src]?.getValue();
+                return jsContent ? `<script>${jsContent.replace(/<\/script>/g, '<\\/script>')}<\/script>` : match;
+            });
+            return htmlContent;
+        }
+
+        function updatePreview() {
+            try {
+                const frame = document.getElementById('previewFrame');
+                if (!frame) return;
+                frame.srcdoc = getBuiltHtml();
+            } catch (e) { 
+                console.error("Lỗi khi cập nhật xem trước:", e);
+            }
+        }
+        
+        async function exportProjectAsHtml() {
+            try {
+                const htmlContent = getBuiltHtml();
+                const textarea = document.createElement('textarea');
+                textarea.value = htmlContent;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                await showAlert('Thành công!', 'Toàn bộ code dự án (dưới dạng một file HTML) đã được sao chép vào clipboard của bạn.');
+            } catch (e) { 
+                console.error("Lỗi khi xuất code:", e);
+                await showAlert('Lỗi', 'Đã có lỗi xảy ra khi sao chép code.');
+            }
+        }
+
+        function setPreviewMode(mode) {
+            const frame = document.getElementById('previewFrame');
+            if (mode === 'desktop') {
+                frame.style.width = '100%';
+                frame.style.height = '100%';
+            } else {
+                frame.style.width = '375px';
+                frame.style.height = '667px';
+            }
+        }
+
+        // --- File Attachment Logic ---
+        function renderAttachedFiles() {
+            attachedFilesList.innerHTML = '';
+            attachedFiles.forEach(file => {
+                const fileTag = document.createElement('div');
+                fileTag.className = 'flex items-center bg-indigo-100 text-indigo-800 text-sm font-medium px-2.5 py-1 rounded-full';
+                fileTag.innerHTML = `
+                    <span>${file.name}</span>
+                    <button data-filename="${file.name}" class="remove-attachment-btn ml-2 text-indigo-500 hover:text-indigo-700 font-bold">&times;</button>
+                `;
+                attachedFilesList.appendChild(fileTag);
+            });
+
+            document.querySelectorAll('.remove-attachment-btn').forEach(btn => {
+                btn.onclick = (e) => {
+                    const filename = e.currentTarget.dataset.filename;
+                    removeAttachedFile(filename);
+                };
+            });
+        }
+
+        function removeAttachedFile(filename) {
+            attachedFiles = attachedFiles.filter(f => f.name !== filename);
+            renderAttachedFiles();
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (!files) return;
+
+            Array.from(files).forEach(file => {
+                if (attachedFiles.some(f => f.name === file.name)) {
+                    showAlert("Tệp bị trùng", `Tệp có tên "${file.name}" đã được đính kèm.`);
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    attachedFiles.push({ name: file.name, content: e.target.result });
+                    renderAttachedFiles();
+                };
+                reader.onerror = () => {
+                    showAlert("Lỗi đọc tệp", `Không thể đọc nội dung của tệp "${file.name}".`);
+                };
+                reader.readAsText(file);
+            });
+            event.target.value = '';
+        }
+
+        function getAttachedFilesContext() {
+            if (attachedFiles.length === 0) return '';
+            let context = '\n\n--- START OF ATTACHED FILES CONTEXT ---\n';
+            attachedFiles.forEach(file => {
+                context += `--- Attached File: ${file.name} ---\n${file.content}\n\n`;
+            });
+            context += '--- END OF ATTACHED FILES CONTEXT ---\n';
+            return context;
+        }
+
+
+        // --- AI Interaction Logic (Editing) ---
+        function findCodeBlockRange(model, codeToFind) {
+            const createFingerprint = (str) => {
+                if (!str) return '';
+                return str.replace(/\r\n/g, '\n').replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+            };
+            
+            const codeToFindFingerprint = createFingerprint(codeToFind);
+            if (codeToFindFingerprint.length === 0) return null;
+
+            const fullModelContent = model.getValue();
+            const fullModelFingerprint = createFingerprint(fullModelContent);
+
+            const startIndexInFingerprint = fullModelFingerprint.indexOf(codeToFindFingerprint);
+            if (startIndexInFingerprint === -1) {
+                return null;
+            }
+
+            let nonWhitespaceCount = 0;
+            let startOffset = -1;
+            let endOffset = -1;
+
+            for (let i = 0; i < fullModelContent.length; i++) {
+                const char = fullModelContent[i];
+                if (!/[\s\u200B-\u200D\uFEFF]/.test(char)) {
+                    if (nonWhitespaceCount === startIndexInFingerprint) {
+                        startOffset = i;
+                    }
+                    if (nonWhitespaceCount === startIndexInFingerprint + codeToFindFingerprint.length - 1) {
+                        endOffset = i + 1;
+                        break; 
+                    }
+                    nonWhitespaceCount++;
+                }
+            }
+
+            if (startOffset === -1 || endOffset === -1) return null;
+
+            const startPosition = model.getPositionAt(startOffset);
+            const endPosition = model.getPositionAt(endOffset);
+
+            return new monaco.Range(startPosition.lineNumber, startPosition.column, endPosition.lineNumber, endPosition.column);
+        }
+
+        function findRangeByAnchor(model, oldCode) {
+            const oldCodeLines = oldCode.replace(/\r\n/g, '\n').split('\n');
+            if (oldCodeLines.length < 5) return null; 
+
+            const anchorSize = 3;
+            const anchorStartIndex = Math.floor((oldCodeLines.length - anchorSize) / 2);
+            const anchorLines = oldCodeLines.slice(anchorStartIndex, anchorStartIndex + anchorSize);
+            const anchorText = anchorLines.join('\n');
+
+            const anchorRange = findCodeBlockRange(model, anchorText);
+            if (!anchorRange) {
+                console.warn("Anchor search failed: could not find the anchor snippet.");
+                return null;
+            }
+
+            const startLine = anchorRange.startLineNumber - anchorStartIndex;
+            const endLine = startLine + oldCodeLines.length - 1;
+
+            if (startLine < 1 || endLine > model.getLineCount()) {
+                console.warn("Anchor search failed: reconstructed range is out of bounds.");
+                return null;
+            }
+
+            const endLineMaxColumn = model.getLineMaxColumn(endLine);
+            return new monaco.Range(startLine, 1, endLine, endLineMaxColumn);
+        }
+        
+        function findFunctionInjectionPoint(model, functionSignature, position) {
+            const text = model.getValue();
+            const signatureRegex = new RegExp(
+                functionSignature
+                    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                    .replace(/\s+/g, '\\s*')
+            );
+
+            const match = text.match(signatureRegex);
+            if (!match) return null;
+
+            const signatureStartIndex = match.index;
+            const textAfterSignature = text.substring(signatureStartIndex + match[0].length);
+            
+            const openBraceIndex = textAfterSignature.indexOf('{');
+            if (openBraceIndex === -1) return null;
+
+            const bodyStartIndex = signatureStartIndex + match[0].length + openBraceIndex;
+            let braceCount = 1;
+            let bodyEndIndex = -1;
+
+            for (let i = bodyStartIndex + 1; i < text.length; i++) {
+                if (text[i] === '{') braceCount++;
+                else if (text[i] === '}') braceCount--;
+                
+                if (braceCount === 0) {
+                    bodyEndIndex = i;
+                    break;
+                }
+            }
+
+            if (bodyEndIndex === -1) return null;
+
+            if (position === 'start') {
+                const injectionPosition = model.getPositionAt(bodyStartIndex + 1);
+                return new monaco.Range(injectionPosition.lineNumber, injectionPosition.column, injectionPosition.lineNumber, injectionPosition.column);
+            } else { // end
+                const injectionPosition = model.getPositionAt(bodyEndIndex);
+                return new monaco.Range(injectionPosition.lineNumber, injectionPosition.column, injectionPosition.lineNumber, injectionPosition.column);
+            }
+        }
+        
+        async function handleGeneratePlan(debugInfo = null) {
+            const lastUserMessage = document.getElementById('modificationChatInput').value.trim();
+            if (modificationChatHistory.length <= 1 && !lastUserMessage && !debugInfo) {
+                showAlert("Thiếu thông tin", "Vui lòng bắt đầu một cuộc thảo luận hoặc nhập yêu cầu của bạn.");
+                return;
+            }
+
+            if (lastUserMessage) {
+                addMessageToModificationChat('user', lastUserMessage);
+                document.getElementById('modificationChatInput').value = '';
+            }
+
+            const planBtnText = planBtn.querySelector('span');
+            const planSpinner = planBtn.querySelector('.spinner');
+
+            planBtn.disabled = true;
+            planBtnText.textContent = 'Đang lên kế hoạch...';
+            planSpinner.classList.remove('hidden');
+            aiPlanSection.classList.add('hidden');
+            aiPlanContainer.innerHTML = '';
+
+            try {
+                let projectContext = '';
+                if (debugInfo) {
+                     projectContext = `--- START OF ${activeFilePath} ---\n${monacoEditor.getValue()}\n--- END OF ${activeFilePath} ---\n\n`;
+                } else {
+                    Object.entries(projectModels).forEach(([path, model]) => {
+                        projectContext += `--- START OF ${path} ---\n${model.getValue()}\n--- END OF ${path} ---\n\n`;
+                    });
+                }
+                const attachedFilesContext = getAttachedFilesContext();
+
+                const userRequest = debugInfo 
+                    ? `The user has encountered an error. Please analyze the error message and the relevant file to create a fix plan.\nERROR MESSAGE:\n${debugInfo.errorMessage}`
+                    : `OUR DISCUSSION:\n${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}`;
+
+                const planningPrompt = `You are a senior software architect. Your task is to analyze the user's request and create a step-by-step implementation plan. For each step, describe the change and mention the most appropriate action (\`modify\`, \`add\`, \`rename_symbol\`, etc.) you would use. Your output MUST be only the Markdown plan. DO NOT generate the final JSON object.
+                
+                ${userRequest}
+
+                PROJECT FILES:
+                ${projectContext}
+                ${attachedFilesContext}`;
+
+                const result = await aiModel.generateContent(planningPrompt);
+                const planText = result.response.text();
+
+                currentAiPlan = planText;
+                aiPlanContainer.innerHTML = marked.parse(planText);
+                aiPlanSection.classList.remove('hidden');
+                statusEl.textContent = "AI đã tạo xong kế hoạch. Bạn có thể xem lại trước khi tạo đề xuất.";
+
+            } catch (error) {
+                console.error("Lỗi khi tạo kế hoạch:", error);
+                showAlert("Lỗi AI", `Đã xảy ra lỗi khi tạo kế hoạch: ${error.message}`);
+            } finally {
+                planBtn.disabled = false;
+                planBtnText.textContent = 'Xem Kế hoạch';
+                planSpinner.classList.add('hidden');
+            }
+        }
+
+        // --- START: Giai đoạn 4 - Dọn dẹp hàm cũ và tích hợp ---
+        // Hàm V2 mới, sử dụng Function Calling, giờ là hàm mặc định
+        async function handleGenerateModification() {
+            if (modificationChatHistory.length <= 1 && !document.getElementById('modificationChatInput').value.trim()) {
+                showAlert("Thiếu thông tin", "Vui lòng bắt đầu một cuộc thảo luận hoặc nhập yêu cầu trước khi tạo đề xuất.");
+                return;
+            }
+            undoStacks = {};
+            
+            const generateBtn = document.getElementById('modificationGenerateBtn');
+            const spinner = generateBtn.querySelector('.spinner');
+            const btnText = generateBtn.querySelector('span');
+
+            generateBtn.disabled = true;
+            btnText.textContent = 'Đang tạo...';
+            spinner.classList.remove('hidden');
+
+            aiResponseContainer.innerHTML = '';
+            aiResponsePlaceholder.textContent = "Đang chờ phản hồi từ AI...";
+            aiResponseContainer.appendChild(aiResponsePlaceholder);
+
+            try {
+                let projectContext = '';
+                const isFocusMode = focusModeCheckbox.checked;
+                const selection = monacoEditor.getSelection();
+                const selectedText = monacoEditor.getModel().getValueInRange(selection);
+                const attachedFilesContext = getAttachedFilesContext();
+
+                const taskDescription = `Dựa vào cuộc thảo luận và ngữ cảnh dự án, hãy sử dụng các công cụ có sẵn để thực hiện yêu cầu của người dùng.`;
+                
+                let planContext = '';
+                if (currentAiPlan) {
+                    planContext = `\n\nMột kế hoạch đã được tạo ra trước đó. Hãy tuân thủ nghiêm ngặt kế hoạch này để thực hiện các thay đổi.\nKẾ HOẠCH:\n${currentAiPlan}\n`;
+                }
+
+                let finalPrompt;
+                if (isFocusMode && !selection.isEmpty()) {
+                    projectContext = `Người dùng đã chọn đoạn code sau từ tệp \`${activeFilePath}\`:\n\`\`\`\n${selectedText}\n\`\`\``;
+                    finalPrompt = `Bạn là một trợ lý lập trình chuyên nghiệp.
+NGỮ CẢNH CODE ĐỂ SỬA ĐỔI:
+${projectContext}
+${attachedFilesContext}
+LỊCH SỬ THẢO LUẬN:
+${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+${planContext}
+NHIỆM VỤ:
+${taskDescription}`;
+                } else {
+                    Object.entries(projectModels).forEach(([path, model]) => {
+                        projectContext += `--- START OF ${path} ---\n${model.getValue()}\n--- END OF ${path} ---\n\n`;
+                    });
+                    finalPrompt = `Bạn là một trợ lý lập trình chuyên nghiệp.
+CÁC TỆP CỦA DỰ ÁN:
+${projectContext}
+${attachedFilesContext}
+LỊCH SỬ THẢO LUẬN:
+${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+${planContext}
+NHIỆM VỤ:
+${taskDescription}`;
+                }
+
+                const modelWithTools = getGenerativeModel(getAI(app), { 
+                    model: "gemini-1.5-flash",
+                    ...availableTools
+                });
+
+                const result = await modelWithTools.generateContent(finalPrompt);
+                const response = result.response;
+                const functionCalls = response.functionCalls();
+
+                if (functionCalls && functionCalls.length > 0) {
+                    const changes = functionCalls.map(call => ({
+                        action: call.name,
+                        ...call.args
+                    }));
+                    renderChangeList(changes);
+                } else {
+                    const textResponse = response.text();
+                    addMessageToModificationChat('ai', textResponse);
+                    aiResponsePlaceholder.textContent = "AI đã trả lời trong khung chat. Không có đề xuất nào được tạo.";
+                }
+
+            } catch (error) {
+                console.error("Lỗi AI:", error);
+                statusEl.textContent = `Lỗi: ${error.message}`;
+                showAlert("Lỗi AI", error.message);
+            } finally {
+                generateBtn.disabled = false;
+                btnText.textContent = 'Tạo Đề xuất';
+                spinner.classList.add('hidden');
+            }
+        }
+        // --- END: Giai đoạn 4 ---
+        
+        // --- Card Rendering Logic ---
+        function renderChangeList(changes) {
+            activeDiffEditors.forEach(d => {
+                d.editor.dispose();
+                d.originalModel.dispose();
+                d.modifiedModel.dispose();
+            });
+            activeDiffEditors = [];
+            aiResponseContainer.innerHTML = '';
+
+            if (changes.length === 0) {
+                aiResponsePlaceholder.textContent = "AI không tìm thấy thay đổi nào.";
+                aiResponseContainer.appendChild(aiResponsePlaceholder);
+                return;
+            }
+
+            const renderers = {
+                'create_file': renderCreateCard,
+                'modify_code': renderModifyCard,
+                'add_code': renderAddCard,
+                'remove_code': renderRemoveCard,
+                'inject_into_function': renderInjectCard,
+                'rename_symbol': renderRenameCard,
+                // Giữ lại các action cũ để tương thích nếu cần
+                'create': renderCreateCard,
+                'add': renderAddCard,
+                'remove': renderRemoveCard,
+                'modify': renderModifyCard,
+                'refactor': renderModifyCard,
+                'wrap_code': renderWrapCard,
+                'extract_to_function': renderExtractCard,
+            };
+
+            changes.forEach((change, i) => {
+                change.uniqueId = `change-${i}`;
+                const renderFunction = renderers[change.action] || renderModifyCard;
+                const card = renderFunction(change);
+                aiResponseContainer.appendChild(card);
+            });
+        }
+
+        function createBaseCard(change) {
+            const card = document.createElement('div');
+            card.className = 'bg-white p-4 mb-4 rounded-lg shadow-md';
+            card.id = change.uniqueId;
+            return card;
+        }
+
+        function addCardActions(card, change) {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'mt-4 flex flex-col sm:flex-row gap-2';
+
+            const applyButton = document.createElement('button');
+            applyButton.className = 'apply-button w-full sm:w-auto flex-grow bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg';
+            applyButton.textContent = 'Áp dụng';
+            applyButton.onclick = () => applySingleChange(change);
+            buttonContainer.appendChild(applyButton);
+
+            const explainButton = document.createElement('button');
+            explainButton.className = 'explain-button w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center';
+            explainButton.innerHTML = `<span><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-2 align-middle" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>Giải thích</span>`;
+            explainButton.onclick = () => handleExplainChange(change);
+            buttonContainer.appendChild(explainButton);
+            
+            const applyButtonWrapper = document.createElement('div');
+            applyButtonWrapper.className = 'apply-buttons';
+            applyButtonWrapper.appendChild(buttonContainer);
+
+            const undoButtonContainer = document.createElement('div');
+            undoButtonContainer.className = 'undo-buttons mt-4 hidden';
+            undoButtonContainer.innerHTML = `<button class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg">[↶] Hoàn tác</button>`;
+            undoButtonContainer.querySelector('button').addEventListener('click', () => undoChange(change.uniqueId));
+
+            card.appendChild(applyButtonWrapper);
+            card.appendChild(undoButtonContainer);
+        }
+
+        function renderCreateCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-gray-800">${change.description || 'Tạo tệp mới'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Tạo tệp mới: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <div class="mt-2 w-full h-64 border border-gray-300 rounded-md" id="editor-container-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                monaco.editor.create(document.getElementById(`editor-container-${change.uniqueId}`), { value: change.newCode, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light' });
+            }, 0);
+            return card;
+        }
+
+        function renderAddCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-gray-800">${change.description || 'Thêm code mới'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Trong tệp: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <p class="text-sm text-gray-500 mt-1">Sẽ được thêm vào ${change.position === 'after' ? 'sau' : 'trước'} khối code:</p>
+                              <pre class="text-xs bg-gray-100 p-2 rounded mt-1"><code>${change.anchorCode}</code></pre>
+                              <div class="mt-2 w-full h-64 border border-gray-300 rounded-md" id="editor-container-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                monaco.editor.create(document.getElementById(`editor-container-${change.uniqueId}`), { value: change.newCode, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light' });
+            }, 0);
+            return card;
+        }
+        
+        function renderRemoveCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-gray-800">${change.description || 'Xóa code'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Trong tệp: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <p class="text-sm text-gray-500 mt-1">Khối code sau sẽ bị xóa:</p>
+                              <div class="mt-2 w-full h-64 border border-red-300 rounded-md" id="editor-container-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                monaco.editor.create(document.getElementById(`editor-container-${change.uniqueId}`), { value: change.codeToRemove, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light', extraEditorClassName: 'bg-red-50' });
+            }, 0);
+            return card;
+        }
+
+        function renderModifyCard(change) {
+            const card = createBaseCard(change);
+            const isRefactor = change.action === 'refactor';
+            const title = change.description || (isRefactor ? 'Đề xuất Tái cấu trúc (Refactor)' : 'Sửa đổi code');
+            const borderColor = isRefactor ? 'border-purple-300' : 'border-gray-300';
+            card.innerHTML = `<p class="font-semibold text-gray-800">${title}</p>
+                              <p class="text-sm text-gray-500 mt-2">Trong tệp: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <div id="diff-container-${change.uniqueId}" class="mt-2 w-full h-64 border ${borderColor} rounded-md"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                const diffContainer = document.getElementById(`diff-container-${change.uniqueId}`);
+                const originalModel = monaco.editor.createModel(change.oldCode, getLanguageForFile(change.file));
+                const modifiedModel = monaco.editor.createModel(change.newCode, getLanguageForFile(change.file));
+                const diffEditor = monaco.editor.createDiffEditor(diffContainer, { readOnly: true, automaticLayout: true, theme: 'vs-light' });
+                diffEditor.setModel({ original: originalModel, modified: modifiedModel });
+                activeDiffEditors.push({ editor: diffEditor, originalModel: originalModel, modifiedModel: modifiedModel });
+            }, 0);
+            return card;
+        }
+
+        // --- Change Application Logic ---
+        function findBestMatchRange(model, codeToFind, expectedStartLine) {
+            if (expectedStartLine) {
+                const lineContent = model.getLineContent(expectedStartLine);
+                const firstLineOfCode = codeToFind.split('\n')[0].trim();
+                if (lineContent.includes(firstLineOfCode)) {
+                    const searchRange = new monaco.Range(expectedStartLine, 1, model.getLineCount(), 1);
+                    const matches = model.findMatches(codeToFind, searchRange, false, false, null, false);
+                    if (matches.length > 0) {
+                        statusEl.textContent = `So khớp thành công tại vị trí gợi ý (Lớp 1).`;
+                        return matches[0].range;
+                    }
+                }
+            }
+
+            let matchRange = findCodeBlockRange(model, codeToFind);
+            if (matchRange) {
+                statusEl.textContent = `So khớp thành công bằng tìm kiếm toàn cục (Lớp 2).`;
+                return matchRange;
+            }
+
+            console.warn("So khớp chính xác thất bại. Thử tìm kiếm theo mỏ neo...");
+            statusEl.textContent = "So khớp chính xác thất bại, thử so khớp theo mỏ neo...";
+            matchRange = findRangeByAnchor(model, codeToFind);
+            if (matchRange) {
+                 statusEl.textContent = `So khớp thành công bằng tìm kiếm mỏ neo (Lớp 3).`;
+                return matchRange;
+            }
+
+            return null;
+        }
+
+        async function applySingleChange(change) {
+            const action = change.action.startsWith('refactor') ? 'refactor' : change.action;
+            const targetModel = projectModels[change.file];
+
+            if (!targetModel && !['create_file', 'rename_symbol'].includes(action)) {
+                await showAlert("Lỗi", `Không tìm thấy tệp ${change.file}`);
+                return;
+            }
+
+            const applicators = {
+                'create_file': applyCreateChange,
+                'add_code': applyAddChange,
+                'remove_code': applyRemoveChange,
+                'modify_code': applyModifyChange,
+                'inject_into_function': applyInjectChange,
+                'rename_symbol': applyRenameChange,
+                'refactor': applyModifyChange,
+                'wrap_code': applyWrapChange,
+                'extract_to_function': applyExtractChange,
+            };
+
+            const applyFunction = applicators[action];
+
+            if (applyFunction) {
+                const success = await applyFunction(change, targetModel);
+                if (success) {
+                    const card = document.getElementById(change.uniqueId);
+                    card.querySelector('.apply-buttons').classList.add('hidden');
+                    card.querySelector('.undo-buttons').classList.remove('hidden');
+                }
+            } else {
+                await showAlert("Lỗi", `Hành động không xác định: ${action}`);
+            }
+        }
+
+        async function applyCreateChange(change) {
+            const parts = change.file.split('/');
+            const filename = parts.pop();
+            const parentPath = parts.join('/');
+            const { item: parentFolder } = findItemByPath(parentPath);
+
+            if (parentFolder && (parentPath === '' || parentFolder.type === 'folder')) {
+                const targetChildren = parentPath ? parentFolder.children : projectStructure;
+                targetChildren[filename] = { type: 'file' };
+                projectModels[change.file] = monaco.editor.createModel(change.newCode, getLanguageForFile(change.file));
+                projectModels[change.file].onDidChangeContent(updatePreview);
+                undoStacks[change.uniqueId] = { action: 'create_file', path: change.file };
+                renderFileExplorer();
+                switchFile(change.file);
+                statusEl.textContent = `Đã tạo tệp ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không thể tạo tệp, thư mục cha "${parentPath}" không tồn tại.`);
+                return false;
+            }
+        }
+        
+        async function applyAddChange(change, targetModel) {
+            const matchRange = findBestMatchRange(targetModel, change.anchorCode, change.expectedStartLine);
+            if (matchRange) {
+                let range, textToInsert, inverseEdits;
+                if (change.position === 'after') {
+                    range = new monaco.Range(matchRange.endLineNumber, targetModel.getLineMaxColumn(matchRange.endLineNumber), matchRange.endLineNumber, targetModel.getLineMaxColumn(matchRange.endLineNumber));
+                    textToInsert = '\n' + change.newCode;
+                } else {
+                    range = new monaco.Range(matchRange.startLineNumber, 1, matchRange.startLineNumber, 1);
+                    textToInsert = change.newCode + '\n';
+                }
+                targetModel.pushEditOperations([], [{ range, text: textToInsert }], (inverse) => { inverseEdits = inverse; return null; });
+                undoStacks[change.uniqueId] = { action: 'add_code', path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã thêm code vào ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không tìm thấy khối code neo trong tệp ${change.file}.`);
+                return false;
+            }
+        }
+        
+        async function applyRemoveChange(change, targetModel) {
+            const matchRange = findBestMatchRange(targetModel, change.codeToRemove, change.expectedStartLine);
+            if (matchRange) {
+                let inverseEdits;
+                targetModel.pushEditOperations([], [{ range: matchRange, text: '' }], (inverse) => { inverseEdits = inverse; return null; });
+                undoStacks[change.uniqueId] = { action: 'remove_code', path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã xóa code khỏi ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không tìm thấy khối code cần xóa trong tệp ${change.file}.`);
+                return false;
+            }
+        }
+
+        async function applyModifyChange(change, targetModel) {
+            const matchRange = findBestMatchRange(targetModel, change.oldCode, change.expectedStartLine);
+            
+            if (matchRange) {
+                let inverseEdits;
+                targetModel.pushEditOperations([], [{ range: matchRange, text: change.newCode }], (inverse) => { inverseEdits = inverse; return null; });
+                undoStacks[change.uniqueId] = { action: change.action, path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã cập nhật tệp ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không tìm thấy mã cũ trong tệp ${change.file}. Vui lòng thử áp dụng thủ công.`);
+                return false;
+            }
+        }
+
+        async function applyInjectChange(change, targetModel) {
+            const injectionRange = findFunctionInjectionPoint(targetModel, change.functionSignature, change.position);
+            if (injectionRange) {
+                let inverseEdits;
+                const textToInject = (change.position === 'start' ? `\n    ` : `\n    `) + change.codeToInject;
+                targetModel.pushEditOperations([], [{ range: injectionRange, text: textToInject }], (inverse) => { inverseEdits = inverse; return null; });
+                undoStacks[change.uniqueId] = { action: 'inject_into_function', path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã chèn code vào hàm trong tệp ${change.file}`;
+                return true;
+            } else {
+                 await showAlert("Lỗi", `Không tìm thấy hàm với chữ ký "${change.functionSignature}" trong tệp ${change.file}.`);
+                return false;
+            }
+        }
+
+        async function applyRenameChange(change) {
+            let allInverseEdits = [];
+            for (const filePath of change.file_scope) {
+                const model = projectModels[filePath];
+                if (model) {
+                    const matches = model.findMatches(change.old_name, false, false, true, null, true);
+                    const edits = matches.map(match => ({ range: match.range, text: change.new_name }));
+                    model.pushEditOperations([], edits, (inverse) => { allInverseEdits.push({path: filePath, edits: inverse}); return null; });
+                }
+            }
+            undoStacks[change.uniqueId] = { action: 'rename_symbol', multi_file_edits: allInverseEdits };
+            statusEl.textContent = `Đã đổi tên '${change.old_name}' thành '${change.new_name}'.`;
+            return true;
+        }
+
+        // ... (Các hàm apply khác chưa được nâng cấp) ...
+
+        function undoChange(uniqueId) {
+            const undoInfo = undoStacks[uniqueId];
+            if (!undoInfo) return;
+            
+            if (undoInfo.action === 'create_file' || undoInfo.action === 'create') {
+                handleDelete(undoInfo.path, true);
+                statusEl.textContent = `Đã hoàn tác (xóa) tệp ${undoInfo.path}`;
+            } else if (undoInfo.action === 'rename_symbol') {
+                undoInfo.multi_file_edits.forEach(undoEdit => {
+                    const model = projectModels[undoEdit.path];
+                    if(model) {
+                        model.pushEditOperations([], undoEdit.edits, () => null);
+                    }
+                });
+                statusEl.textContent = `Đã hoàn tác việc đổi tên.`;
+            } else {
+                const targetModel = projectModels[undoInfo.path];
+                if (targetModel && undoInfo.edits) {
+                    targetModel.pushEditOperations([], undoInfo.edits, () => null);
+                    statusEl.textContent = `Đã hoàn tác thay đổi trong ${undoInfo.path}`;
+                }
+            }
+            
+            delete undoStacks[uniqueId];
+            const card = document.getElementById(uniqueId);
+            card.querySelector('.apply-buttons').classList.remove('hidden');
+            card.querySelector('.undo-buttons').classList.add('hidden');
+        }
+        
+        async function handleExplainChange(change) {
+            const card = document.getElementById(change.uniqueId);
+            const explainButton = card.querySelector('.explain-button');
+            const explainButtonSpan = explainButton.querySelector('span');
+            
+            explainButton.disabled = true;
+            explainButtonSpan.classList.add('hidden');
+            const spinner = document.createElement('div');
+            spinner.className = 'spinner';
+            explainButton.appendChild(spinner);
+
+            try {
+                let changeContext = '';
+                const action = change.action.replace('_code', '').replace('_file', '');
+                switch(action) {
+                    case 'modify':
+                    case 'refactor':
+                        changeContext = `OLD CODE:\n\`\`\`\n${change.oldCode}\n\`\`\`\n\nNEW CODE:\n\`\`\`\n${change.newCode}\n\`\`\``;
+                        break;
+                    case 'create':
+                        changeContext = `NEW FILE CREATED: ${change.file}\n\nNEW CODE:\n\`\`\`\n${change.newCode}\n\`\`\``;
+                        break;
+                    case 'add':
+                         changeContext = `CODE TO ADD:\n\`\`\`\n${change.newCode}\n\`\`\`\n\nANCHOR CODE (the new code will be added ${change.position}):\n\`\`\`\n${change.anchorCode}\n\`\`\``;
+                        break;
+                    case 'remove':
+                         changeContext = `CODE TO REMOVE:\n\`\`\`\n${change.codeToRemove}\n\`\`\``;
+                        break;
+                    default:
+                        changeContext = `CHANGE DETAILS:\n${JSON.stringify(change, null, 2)}`;
+                }
+
+                const prompt = `Bạn là một chuyên gia lập trình và là một người giải thích code bậc thầy.
+                Nhiệm vụ của bạn là giải thích một đề xuất thay đổi code một cách chi tiết, rõ ràng và thân thiện cho người dùng Việt Nam.
+                
+                Bối cảnh: Người dùng đã yêu cầu một thay đổi, và bạn (AI) đã đề xuất một giải pháp. Bây giờ, người dùng muốn hiểu TẠI SAO bạn lại đề xuất như vậy.
+
+                ĐÂY LÀ ĐỀ XUẤT THAY ĐỔI CẦN GIẢI THÍCH:
+                Hành động: ${change.action}
+                Tệp: ${change.file}
+                ${changeContext}
+
+                YÊU CẦU GIẢI THÍCH:
+                1.  **Mục tiêu chính:** Bắt đầu bằng một câu tóm tắt mục tiêu của sự thay đổi này là gì.
+                2.  **Giải thích chi tiết:** Phân tích từng phần của sự thay đổi. Nếu là sửa đổi, hãy so sánh "trước" và "sau". Nếu là thêm mới, hãy giải thích chức năng của đoạn code mới.
+                3.  **Lý do lựa chọn:** Tại sao bạn lại chọn giải pháp này? Có giải pháp nào khác không và tại sao giải pháp này lại tốt hơn trong bối cảnh này?
+                4.  **Tác động:** Sự thay đổi này ảnh hưởng như thế nào đến phần còn lại của dự án?
+
+                Hãy trả lời hoàn toàn bằng tiếng Việt. Sử dụng định dạng Markdown để câu trả lời dễ đọc (dùng tiêu đề, danh sách, in đậm, v.v.).`;
+
+                const result = await aiModel.generateContent(prompt);
+                const explanationHtml = marked.parse(result.response.text());
+                
+                await showAlert(`Giải thích cho thay đổi tại "${change.file}"`, explanationHtml);
+
+            } catch (error) {
+                console.error("Lỗi khi tạo giải thích:", error);
+                await showAlert("Lỗi AI", `Không thể tạo giải thích: ${error.message}`);
+            } finally {
+                explainButton.disabled = false;
+                explainButton.removeChild(spinner);
+                explainButtonSpan.classList.remove('hidden');
+            }
+        }
+
+        // --- New Project Creation Logic ---
+        function openNewProjectChatModal() {
+            newProjectChatHistory = [];
+            const chatHistoryEl = document.getElementById('newProjectChatHistory');
+            chatHistoryEl.innerHTML = '';
+            addMessageToNewProjectChat('ai', 'Chào bạn! Hãy mô tả ý tưởng về trang web bạn muốn tạo. Tôi sẽ giúp bạn biến nó thành hiện thực.');
+            document.getElementById('newProjectChatInput').value = '';
+            newProjectChatModal.classList.remove('hidden');
+        }
+
+        function addMessageToNewProjectChat(role, text) {
+            newProjectChatHistory.push({ role, text });
+            const chatHistoryEl = document.getElementById('newProjectChatHistory');
+            const messageEl = document.createElement('div');
+            messageEl.className = `chat-bubble ${role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}`;
+            if (role === 'ai' && typeof marked !== 'undefined') {
+                messageEl.innerHTML = marked.parse(text);
+            } else {
+                messageEl.textContent = text;
+            }
+            chatHistoryEl.appendChild(messageEl);
+            chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+        }
+
+        async function handleNewProjectDiscussion() {
+            const inputEl = document.getElementById('newProjectChatInput');
+            const userMessage = inputEl.value.trim();
+            if (!userMessage) return;
+
+            addMessageToNewProjectChat('user', userMessage);
+            inputEl.value = '';
+
+            const discussBtn = document.getElementById('newProjectDiscussBtn');
+            const spinner = discussBtn.querySelector('.spinner');
+            const btnText = discussBtn.querySelector('span');
+
+            discussBtn.disabled = true;
+            btnText.textContent = 'AI đang nghĩ...';
+            spinner.classList.remove('hidden');
+
+            try {
+                const prompt = `Bạn là một chuyên gia tư vấn và phát triển web. Người dùng muốn tạo một dự án web mới. Dưới đây là cuộc trò chuyện của chúng ta. Hãy tiếp tục thảo luận, đặt câu hỏi để làm rõ yêu cầu, hoặc đưa ra gợi ý.
+                
+                Lịch sử trò chuyện:
+                ${newProjectChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+                
+                Hãy trả lời một cách ngắn gọn, thân thiện để tiếp tục cuộc thảo luận.`;
+
+                const result = await aiModel.generateContent(prompt);
+                const aiResponse = result.response.text();
+                addMessageToNewProjectChat('ai', aiResponse);
+            } catch (error) {
+                console.error("Lỗi thảo luận dự án mới:", error);
+                addMessageToNewProjectChat('ai', 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.');
+            } finally {
+                discussBtn.disabled = false;
+                btnText.textContent = 'Thảo luận';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        async function handleGenerateProjectFromChat() {
+            if (newProjectChatHistory.length < 2) {
+                showAlert("Thiếu thông tin", "Vui lòng thảo luận thêm về ý tưởng của bạn trước khi tạo dự án.");
+                return;
+            }
+
+            const generateBtn = document.getElementById('newProjectGenerateBtn');
+            const spinner = generateBtn.querySelector('.spinner');
+            const btnText = generateBtn.querySelector('span');
+
+            generateBtn.disabled = true;
+            btnText.textContent = 'Đang tạo...';
+            spinner.classList.remove('hidden');
+            showLoader("AI đang tạo dự án của bạn...");
+
+            try {
+                const prompt = `Dựa trên toàn bộ cuộc trò chuyện sau, hãy tạo ra code cho một dự án web hoàn chỉnh.
+                
+                Lịch sử trò chuyện:
+                ${newProjectChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+
+                Nhiệm vụ:
+                1. Phân tích toàn bộ yêu cầu của người dùng.
+                2. Tạo ra nội dung code đầy đủ cho 3 tệp: 'index.html', 'src/css/style.css', và 'src/js/script.js'.
+                3. Đảm bảo các tệp được liên kết với nhau đúng cách trong file HTML.
+                4. Trả về một đối tượng JSON duy nhất có cấu trúc như sau: { "index.html": "...", "src/css/style.css": "...", "src/js/script.js": "..." }.
+                **QUAN TRỌNG:** Chỉ trả về đối tượng JSON, không có bất kỳ văn bản hay giải thích nào khác.`;
+
+                const result = await aiModel.generateContent(prompt);
+                const aiResponse = parseJsonResponse(result.response.text());
+                
+                if (!aiResponse['index.html'] || !aiResponse['src/css/style.css'] || !aiResponse['src/js/script.js']) {
+                    throw new Error("Đối tượng JSON trả về thiếu các tệp cần thiết.");
+                }
+
+                loadProjectFromData(aiResponse);
+                newProjectChatModal.classList.add('hidden');
+                statusEl.textContent = "Dự án mới đã được tạo thành công bởi AI!";
+                showAlert("Thành công!", "Dự án mới của bạn đã được tạo và nạp vào trình soạn thảo.");
+
+            } catch (error) {
+                console.error("Lỗi tạo dự án từ AI:", error);
+                showAlert("Lỗi", `Đã xảy ra lỗi khi tạo dự án: ${error.message}`);
+            } finally {
+                generateBtn.disabled = false;
+                btnText.textContent = 'Tạo Dự án';
+                spinner.classList.add('hidden');
+                hideLoader();
+            }
+        }
+
+        // --- Modification Chat Logic ---
+        function resetModificationChat() {
+            modificationChatHistory = [];
+            attachedFiles = [];
+            renderAttachedFiles();
+            currentAiPlan = null;
+            aiPlanSection.classList.add('hidden');
+            aiPlanContainer.innerHTML = '';
+            const chatHistoryEl = document.getElementById('modificationChatHistory');
+            chatHistoryEl.innerHTML = '';
+            addMessageToModificationChat('ai', 'Chào bạn! Tôi có thể giúp gì để sửa đổi dự án này?');
+        }
+
+        function addMessageToModificationChat(role, text) {
+            modificationChatHistory.push({ role, text });
+            const chatHistoryEl = document.getElementById('modificationChatHistory');
+            const messageEl = document.createElement('div');
+            messageEl.className = `chat-bubble ${role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}`;
+            if (role === 'ai' && typeof marked !== 'undefined') {
+                messageEl.innerHTML = marked.parse(text);
+            } else {
+                messageEl.textContent = text;
+            }
+            chatHistoryEl.appendChild(messageEl);
+            chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+        }
+
+        async function handleModificationDiscussion() {
+            const inputEl = document.getElementById('modificationChatInput');
+            const userMessage = inputEl.value.trim();
+            if (!userMessage) return;
+
+            addMessageToModificationChat('user', userMessage);
+            inputEl.value = '';
+
+            const discussBtn = document.getElementById('modificationDiscussBtn');
+            const spinner = discussBtn.querySelector('.spinner');
+            const btnText = discussBtn.querySelector('span');
+
+            discussBtn.disabled = true;
+            btnText.textContent = 'AI đang nghĩ...';
+            spinner.classList.remove('hidden');
+
+            try {
+                let projectContext = '';
+                Object.entries(projectModels).forEach(([path, model]) => {
+                    projectContext += `--- START OF ${path} ---\n${model.getValue()}\n--- END OF ${path} ---\n\n`;
+                });
+                
+                const attachedFilesContext = getAttachedFilesContext();
+
+                const prompt = `Bạn là một trợ lý lập trình. Chúng ta đang thảo luận về việc sửa đổi một dự án web. Dưới đây là ngữ cảnh code và cuộc trò chuyện của chúng ta. Hãy tiếp tục thảo luận, đặt câu hỏi để làm rõ yêu cầu, hoặc đưa ra gợi ý. **KHÔNG** tạo ra đề xuất sửa đổi JSON trong bước này.
+                
+                NGỮ CẢNH CODE DỰ ÁN:
+                ${projectContext}
+                ${attachedFilesContext}
+
+                LỊCH SỬ TRÒ CHUYỆN:
+                ${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+                
+                Hãy trả lời một cách ngắn gọn, thân thiện để tiếp tục cuộc thảo luận.`;
+
+                const result = await aiModel.generateContent(prompt);
+                const aiResponse = result.response.text();
+                addMessageToModificationChat('ai', aiResponse);
+            } catch (error) {
+                console.error("Lỗi thảo luận sửa đổi:", error);
+                addMessageToModificationChat('ai', 'Xin lỗi, đã có lỗi xảy ra. Vui lòng thử lại.');
+            } finally {
+                discussBtn.disabled = false;
+                btnText.textContent = 'Thảo luận';
+                spinner.classList.add('hidden');
+            }
+        }
+
+        async function handleRegenerateFile() {
+            if (modificationChatHistory.length < 2) {
+                showAlert("Thiếu thông tin", "Vui lòng thảo luận với AI trước khi tái tạo file.");
+                return;
+            }
+
+            const confirmed = await showConfirm("Xác nhận Tái tạo", "Hành động này sẽ ghi đè toàn bộ nội dung của các file liên quan bằng phiên bản mới do AI tạo ra. Bạn có chắc chắn muốn tiếp tục?");
+            if (!confirmed) return;
+
+            const regenerateBtn = document.getElementById('regenerateFileBtn');
+            const spinner = regenerateBtn.querySelector('.spinner');
+            const btnText = regenerateBtn.querySelector('span');
+
+            regenerateBtn.disabled = true;
+            btnText.textContent = 'Đang tái tạo...';
+            spinner.classList.remove('hidden');
+            showLoader("AI đang tái tạo lại file...");
+
+            try {
+                let projectContext = '';
+                Object.entries(projectModels).forEach(([path, model]) => {
+                    projectContext += `--- START OF ${path} ---\n${model.getValue()}\n--- END OF ${path} ---\n\n`;
+                });
+                
+                const attachedFilesContext = getAttachedFilesContext();
+
+                const prompt = `Dựa trên toàn bộ cuộc trò chuyện và ngữ cảnh code dự án, hãy tái tạo lại nội dung hoàn chỉnh của các file bị ảnh hưởng.
+
+                PROJECT FILES:
+                ${projectContext}
+                ${attachedFilesContext}
+
+                OUR DISCUSSION:
+                ${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
+
+                TASK:
+                1. Xác định các file cần thay đổi dựa trên cuộc thảo luận.
+                2. Tạo lại nội dung **hoàn chỉnh** cho các file đó.
+                3. Trả về một đối tượng JSON duy nhất, trong đó key là đường dẫn file và value là toàn bộ nội dung mới của file đó. Ví dụ: { "src/js/script.js": "...", "src/css/style.css": "..." }
+                **CRITICAL: Your entire response must be ONLY the JSON object, wrapped in \`\`\`json ... \`\`\`. No extra text outside the JSON block.**`;
+                
+                const result = await aiModel.generateContent(prompt);
+                const regeneratedFiles = parseJsonResponse(result.response.text());
+
+                let filesUpdated = 0;
+                for (const filePath in regeneratedFiles) {
+                    if (projectModels[filePath]) {
+                        projectModels[filePath].setValue(regeneratedFiles[filePath]);
+                        filesUpdated++;
+                    }
+                }
+
+                if (filesUpdated > 0) {
+                    statusEl.textContent = `Đã tái tạo và cập nhật ${filesUpdated} file.`;
+                    showAlert("Thành công!", `AI đã tái tạo và cập nhật thành công ${filesUpdated} file.`);
+                } else {
+                    showAlert("Không có thay đổi", "AI không xác định được file nào cần tái tạo.");
+                }
+
+            } catch (error) {
+                console.error("Lỗi khi tái tạo file:", error);
+                showAlert("Lỗi", `Đã xảy ra lỗi khi tái tạo file: ${error.message}`);
+            } finally {
+                regenerateBtn.disabled = false;
+                btnText.textContent = 'Tái tạo File';
+                spinner.classList.add('hidden');
+                hideLoader();
+            }
+        }
+
+        // --- UI Helpers: Modals & Loaders ---
+        const genericModal = document.getElementById('genericModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalContent = document.getElementById('modalContent');
+        const modalActions = document.getElementById('modalActions');
+        const modalCloseBtn = document.getElementById('modalCloseBtn');
+        const fullScreenLoader = document.getElementById('fullScreenLoader');
+        const loaderText = document.getElementById('loaderText');
+
+        function showLoader(text = 'Đang xử lý...') {
+            loaderText.textContent = text;
+            fullScreenLoader.classList.remove('hidden');
+        }
+
+        function hideLoader() {
+            fullScreenLoader.classList.add('hidden');
+        }
+
+        function hideModal() {
+            genericModal.classList.add('hidden');
+            genericModal.querySelector('div').classList.add('scale-95');
+        }
+
+        function showModal(title, contentHTML, actions) {
+            modalTitle.textContent = title;
+            modalContent.innerHTML = contentHTML;
+            modalActions.innerHTML = '';
+            actions.forEach(action => {
+                const button = document.createElement('button');
+                button.textContent = action.text;
+                button.className = action.class;
+                button.onclick = action.handler;
+                modalActions.appendChild(button);
+            });
+            genericModal.classList.remove('hidden');
+            setTimeout(() => genericModal.querySelector('div').classList.remove('scale-95'), 10);
+        }
+
+        function showAlert(title, messageContent) {
+            return new Promise(resolve => {
+                showModal(title, `<div class="text-gray-700">${messageContent}</div>`, [
+                    { text: 'Đã hiểu', class: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700', handler: () => { hideModal(); resolve(); } }
+                ]);
+            });
+        }
+
+        function showConfirm(title, message) {
+            return new Promise(resolve => {
+                const cancelHandler = () => { hideModal(); resolve(false); };
+                const confirmHandler = () => { hideModal(); resolve(true); };
+                
+                showModal(title, `<p>${message}</p>`, [
+                    { text: 'Hủy', class: 'px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300', handler: cancelHandler },
+                    { text: 'Xác nhận', class: 'px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700', handler: confirmHandler }
+                ]);
+                modalCloseBtn.onclick = cancelHandler;
+            });
+        }
+
+        function showPrompt(title, label, defaultValue = '') {
+            return new Promise(resolve => {
+                const content = `<label for="modalInput" class="block text-sm font-medium text-gray-700">${label}</label>
+                                 <input type="text" id="modalInput" class="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" value="${defaultValue}">`;
+                
+                const cancelHandler = () => { hideModal(); resolve(null); };
+                const confirmHandler = () => {
+                    const value = document.getElementById('modalInput').value;
+                    hideModal();
+                    resolve(value);
+                };
+
+                showModal(title, content, [
+                    { text: 'Hủy', class: 'px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300', handler: cancelHandler },
+                    { text: 'OK', class: 'px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700', handler: confirmHandler }
+                ]);
+                
+                const input = document.getElementById('modalInput');
+                input.focus();
+                input.select();
+                input.onkeydown = (e) => { if (e.key === 'Enter') confirmHandler(); };
+                modalCloseBtn.onclick = cancelHandler;
+            });
+        }
+
+        // --- Event Listeners ---
+        function attachAppEventListeners() {
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                signOut(auth).then(() => {
+                    window.location.reload();
+                });
+            });
+            document.getElementById('save-project-btn').addEventListener('click', saveProject);
+            document.getElementById('load-project-btn').addEventListener('click', loadProjects);
+            document.getElementById('export-code-btn').addEventListener('click', exportProjectAsHtml);
+            document.getElementById('closeLoadModalBtn').addEventListener('click', () => document.getElementById('loadProjectModal').classList.add('hidden'));
+            fileExplorer.addEventListener('contextmenu', showContextMenu);
+            document.addEventListener('click', (e) => {
+                if (!contextMenu.contains(e.target)) {
+                    hideContextMenu();
+                }
+            });
+            openModalBtn.addEventListener('click', () => {
+                previewModal.classList.remove('hidden');
+                updatePreview();
+                setPreviewMode('desktop');
+            });
+            closeModalBtn.addEventListener('click', () => {
+                previewModal.classList.add('hidden');
+            });
+            desktopViewBtn.addEventListener('click', () => setPreviewMode('desktop'));
+            mobileViewBtn.addEventListener('click', () => setPreviewMode('mobile'));
+            
+            document.getElementById('new-project-btn').addEventListener('click', openNewProjectChatModal);
+            document.getElementById('closeNewProjectModalBtn').addEventListener('click', () => newProjectChatModal.classList.add('hidden'));
+            document.getElementById('newProjectDiscussBtn').addEventListener('click', handleNewProjectDiscussion);
+            document.getElementById('newProjectGenerateBtn').addEventListener('click', handleGenerateProjectFromChat);
+
+            // --- START: Giai đoạn 4 - Cập nhật Event Listener ---
+            document.getElementById('modificationDiscussBtn').addEventListener('click', handleModificationDiscussion);
+            document.getElementById('planBtn').addEventListener('click', () => handleGeneratePlan());
+            document.getElementById('modificationGenerateBtn').addEventListener('click', handleGenerateModification);
+            document.getElementById('regenerateFileBtn').addEventListener('click', handleRegenerateFile);
+            // --- END: Giai đoạn 4 ---
+
+            debugBtn.addEventListener('click', () => {
+                errorInput.value = '';
+                debugModal.classList.remove('hidden');
+            });
+            closeDebugModalBtn.addEventListener('click', () => debugModal.classList.add('hidden'));
+            cancelDebugBtn.addEventListener('click', () => debugModal.classList.add('hidden'));
+            analyzeErrorBtn.addEventListener('click', () => {
+                const errorMessage = errorInput.value.trim();
+                if (errorMessage) {
+                    debugModal.classList.add('hidden');
+                    handleGeneratePlan({ errorMessage });
+                } else {
+                    showAlert("Thiếu thông tin", "Vui lòng dán thông báo lỗi vào ô.");
+                }
+            });
+
+            fileAttachmentInput.addEventListener('change', handleFileSelect);
+        }
+        
+        // Auth listeners
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            const email = document.getElementById('email-input').value;
+            const password = document.getElementById('password-input').value;
+            document.getElementById('auth-error').textContent = '';
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                document.getElementById('auth-error').textContent = error.message;
+            }
+        });
+        document.getElementById('register-btn').addEventListener('click', async () => {
+            const email = document.getElementById('email-input').value;
+            const password = document.getElementById('password-input').value;
+            document.getElementById('auth-error').textContent = '';
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                document.getElementById('auth-error').textContent = error.message;
+            }
+        });
+    </script>
+</body>
+</html>
