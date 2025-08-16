@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prototype Động - Sửa code bất kỳ với AI (v45.0 - Final Upgrade)</title>
+    <title>Prototype Động - Sửa code bất kỳ với AI (v45.1 - Bug Fix)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -101,7 +101,7 @@
                                 <label class="block text-sm font-medium text-gray-700 mb-1">Đính kèm tệp (để cung cấp thêm ngữ cảnh cho AI)</label>
                                 <div class="flex items-center">
                                     <label class="w-full flex items-center px-4 py-2 bg-white text-indigo-600 rounded-lg shadow-sm tracking-wide uppercase border border-indigo-500 cursor-pointer hover:bg-indigo-600 hover:text-white">
-                                        <svg class="w-6 h-6 mr-3" fill="currentColor" xmlns="http://www.w.org/2000/svg" viewBox="0 0 20 20"><path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4 4-4-4h3v-4h2v4z" /></svg>
+                                        <svg class="w-6 h-6 mr-3" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4 4-4-4h3v-4h2v4z" /></svg>
                                         <span class="text-sm font-semibold">Chọn tệp...</span>
                                         <input type='file' id="file-attachment-input" class="hidden" multiple />
                                     </label>
@@ -113,7 +113,6 @@
                                 <input id="focus-mode-checkbox" type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
                                 <label for="focus-mode-checkbox" class="ml-2 block text-sm text-gray-900">Chỉ làm việc trên vùng đã chọn (nếu có)</label>
                             </div>
-                             <!-- START: Giai đoạn 4 - Dọn dẹp UI -->
                              <div class="mt-2 grid grid-cols-1 sm:grid-cols-5 gap-4">
                                 <button id="modificationDiscussBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Thảo luận</span><div class="spinner ml-3 hidden"></div></button>
                                 <button id="planBtn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Xem Kế hoạch</span><div class="spinner ml-3 hidden"></div></button>
@@ -121,7 +120,6 @@
                                 <button id="modificationGenerateBtn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Tạo Đề xuất</span><div class="spinner ml-3 hidden"></div></button>
                                 <button id="regenerateFileBtn" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center"><span>Tái tạo File</span><div class="spinner ml-3 hidden"></div></button>
                             </div>
-                             <!-- END: Giai đoạn 4 -->
                         </div>
                         
                         <div id="aiPlanSection" class="hidden mt-8">
@@ -238,7 +236,6 @@
             appId: "1:277847908656:web:77eb210b8e2b2b7dbca8f5"
         };
         
-        // --- START: Giai đoạn 3 - Hoàn thiện bộ công cụ ---
         const availableTools = {
             tools: [{
                 functionDeclarations: [
@@ -326,7 +323,6 @@
                 ]
             }]
         };
-        // --- END: Giai đoạn 3 ---
 
         // --- App State ---
         let monacoEditor, aiModel, auth, db;
@@ -1202,8 +1198,6 @@
             }
         }
 
-        // --- START: Giai đoạn 4 - Dọn dẹp hàm cũ và tích hợp ---
-        // Hàm V2 mới, sử dụng Function Calling, giờ là hàm mặc định
         async function handleGenerateModification() {
             if (modificationChatHistory.length <= 1 && !document.getElementById('modificationChatInput').value.trim()) {
                 showAlert("Thiếu thông tin", "Vui lòng bắt đầu một cuộc thảo luận hoặc nhập yêu cầu trước khi tạo đề xuất.");
@@ -1295,7 +1289,6 @@ ${taskDescription}`;
                 spinner.classList.add('hidden');
             }
         }
-        // --- END: Giai đoạn 4 ---
         
         // --- Card Rendering Logic ---
         function renderChangeList(changes) {
@@ -1320,11 +1313,6 @@ ${taskDescription}`;
                 'remove_code': renderRemoveCard,
                 'inject_into_function': renderInjectCard,
                 'rename_symbol': renderRenameCard,
-                // Giữ lại các action cũ để tương thích nếu cần
-                'create': renderCreateCard,
-                'add': renderAddCard,
-                'remove': renderRemoveCard,
-                'modify': renderModifyCard,
                 'refactor': renderModifyCard,
                 'wrap_code': renderWrapCard,
                 'extract_to_function': renderExtractCard,
@@ -1429,6 +1417,53 @@ ${taskDescription}`;
                 const diffEditor = monaco.editor.createDiffEditor(diffContainer, { readOnly: true, automaticLayout: true, theme: 'vs-light' });
                 diffEditor.setModel({ original: originalModel, modified: modifiedModel });
                 activeDiffEditors.push({ editor: diffEditor, originalModel: originalModel, modifiedModel: modifiedModel });
+            }, 0);
+            return card;
+        }
+
+        function renderInjectCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-cyan-700 flex items-center">${change.description || 'Chèn code vào hàm'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Sẽ chèn vào ${change.position === 'start' ? 'đầu' : 'cuối'} hàm: <code class="font-mono bg-gray-200 p-1 rounded">${change.functionSignature}</code></p>
+                              <div class="mt-2 w-full h-64 border border-cyan-300 rounded-md" id="editor-container-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                monaco.editor.create(document.getElementById(`editor-container-${change.uniqueId}`), { value: change.codeToInject, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light' });
+            }, 0);
+            return card;
+        }
+
+        function renderRenameCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-blue-700 flex items-center">${change.description || 'Đổi tên ký hiệu'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Đổi tên <code class="font-mono bg-gray-200 p-1 rounded">${change.old_name}</code> thành <code class="font-mono bg-gray-200 p-1 rounded">${change.new_name}</code></p>
+                              <p class="text-sm text-gray-500 mt-1">Phạm vi: ${change.file_scope.join(', ')}</p>`;
+            addCardActions(card, change);
+            return card;
+        }
+        
+        function renderWrapCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-orange-700 flex items-center">${change.description || 'Bọc code'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Trong tệp: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <p class="text-sm text-gray-500 mt-1">Đoạn code sau sẽ được bọc:</p>
+                              <div class="mt-2 w-full h-32 border border-orange-300 rounded-md" id="editor-container-wrap-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                monaco.editor.create(document.getElementById(`editor-container-wrap-${change.uniqueId}`), { value: change.code_to_wrap, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light' });
+            }, 0);
+            return card;
+        }
+
+        function renderExtractCard(change) {
+            const card = createBaseCard(change);
+            card.innerHTML = `<p class="font-semibold text-indigo-700 flex items-center">${change.description || 'Tách hàm'}</p>
+                              <p class="text-sm text-gray-500 mt-2">Trong tệp: <code class="font-mono bg-gray-200 p-1 rounded">${change.file}</code></p>
+                              <p class="text-sm text-gray-500 mt-1">Đoạn code sau sẽ được tách ra hàm mới <strong>${change.new_function_name}</strong>:</p>
+                              <div class="mt-2 w-full h-48 border border-indigo-300 rounded-md" id="editor-container-extract-${change.uniqueId}"></div>`;
+            addCardActions(card, change);
+            setTimeout(() => {
+                 monaco.editor.create(document.getElementById(`editor-container-extract-${change.uniqueId}`), { value: change.code_to_extract, language: getLanguageForFile(change.file), readOnly: true, automaticLayout: true, theme: 'vs-light' });
             }, 0);
             return card;
         }
@@ -1602,7 +1637,42 @@ ${taskDescription}`;
             return true;
         }
 
-        // ... (Các hàm apply khác chưa được nâng cấp) ...
+        async function applyWrapChange(change, targetModel) {
+            const matchRange = findCodeBlockRange(targetModel, change.code_to_wrap);
+            if(matchRange) {
+                let inverseEdits;
+                const originalText = targetModel.getValueInRange(matchRange);
+                const newText = `${change.prefix}${originalText}${change.suffix}`;
+                targetModel.pushEditOperations([], [{ range: matchRange, text: newText }], (inverse) => { inverseEdits = inverse; return null; });
+                undoStacks[change.uniqueId] = { action: 'wrap_code', path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã bọc code trong tệp ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không tìm thấy đoạn code cần bọc trong tệp ${change.file}.`);
+                return false;
+            }
+        }
+
+        async function applyExtractChange(change, targetModel) {
+            const matchRange = findCodeBlockRange(targetModel, change.code_to_extract);
+            if (matchRange) {
+                let inverseEdits;
+                const newFunction = `\n\nfunction ${change.new_function_name}(${(change.new_function_parameters || []).join(', ')}) {\n    ${change.code_to_extract}\n}\n`;
+                const endOfFile = new monaco.Range(targetModel.getLineCount() + 1, 1, targetModel.getLineCount() + 1, 1);
+                
+                targetModel.pushEditOperations([], [
+                    { range: matchRange, text: change.replace_with_call },
+                    { range: endOfFile, text: newFunction }
+                ], (inverse) => { inverseEdits = inverse; return null; });
+
+                undoStacks[change.uniqueId] = { action: 'extract_to_function', path: change.file, edits: inverseEdits };
+                statusEl.textContent = `Đã tách code ra hàm mới trong tệp ${change.file}`;
+                return true;
+            } else {
+                await showAlert("Lỗi", `Không tìm thấy đoạn code cần tách trong tệp ${change.file}.`);
+                return false;
+            }
+        }
 
         function undoChange(uniqueId) {
             const undoInfo = undoStacks[uniqueId];
@@ -2072,12 +2142,10 @@ ${taskDescription}`;
             document.getElementById('newProjectDiscussBtn').addEventListener('click', handleNewProjectDiscussion);
             document.getElementById('newProjectGenerateBtn').addEventListener('click', handleGenerateProjectFromChat);
 
-            // --- START: Giai đoạn 4 - Cập nhật Event Listener ---
             document.getElementById('modificationDiscussBtn').addEventListener('click', handleModificationDiscussion);
             document.getElementById('planBtn').addEventListener('click', () => handleGeneratePlan());
             document.getElementById('modificationGenerateBtn').addEventListener('click', handleGenerateModification);
             document.getElementById('regenerateFileBtn').addEventListener('click', handleRegenerateFile);
-            // --- END: Giai đoạn 4 ---
 
             debugBtn.addEventListener('click', () => {
                 errorInput.value = '';
