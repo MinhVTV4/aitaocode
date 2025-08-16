@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prototype Động - Sửa code bất kỳ với AI (v45.4 - Strict Plan Execution)</title>
+    <title>Prototype Động - Sửa code bất kỳ với AI (v45.6 - Bug Fix)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -325,7 +325,7 @@
         };
 
         // --- App State ---
-        let monacoEditor, aiModel, auth, db;
+        let monacoEditor, auth, db;
         let activeFilePath = 'index.html';
         let projectStructure = {};
         let projectModels = {};
@@ -404,15 +404,8 @@
                 renderFileExplorer();
                 updatePreview();
                 attachAppEventListeners();
-                
-                try {
-                    // Cấu hình model mặc định (không có tools)
-                    aiModel = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
-                    statusEl.textContent = "Hệ thống đã sẵn sàng.";
-                } catch (e) {
-                    statusEl.textContent = `Lỗi khởi tạo AI: ${e.message}`;
-                }
                 isEditorInitialized = true;
+                statusEl.textContent = "Hệ thống đã sẵn sàng.";
             });
         }
 
@@ -1024,6 +1017,30 @@
 
 
         // --- AI Interaction Logic (Editing) ---
+        // START: Bug Fix - Re-add parseJsonResponse
+        function parseJsonResponse(responseText) {
+            let jsonString = responseText.match(/```json\s*([\s\S]*?)\s*```/)?.[1].trim();
+            
+            if (!jsonString) {
+                const startIndex = responseText.indexOf('{');
+                const endIndex = responseText.lastIndexOf('}');
+                if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+                    jsonString = responseText.substring(startIndex, endIndex + 1);
+                } else {
+                    throw new Error("Không tìm thấy khối JSON hợp lệ trong phản hồi của AI.");
+                }
+            }
+            
+            try {
+                const cleanedJsonString = jsonString.replace(/,\s*([}\]])/g, '$1');
+                return JSON.parse(cleanedJsonString);
+            } catch (e) {
+                console.error("Lỗi phân tích JSON:", e, "Chuỗi JSON lỗi:", jsonString);
+                throw new Error("Phản hồi JSON không đúng định dạng, ngay cả sau khi đã cố gắng sửa lỗi.");
+            }
+        }
+        // END: Bug Fix
+
         function findCodeBlockRange(model, codeToFind) {
             const createFingerprint = (str) => {
                 if (!str) return '';
@@ -1179,8 +1196,9 @@
                 PROJECT FILES:
                 ${projectContext}
                 ${attachedFilesContext}`;
-
-                const result = await aiModel.generateContent(planningPrompt);
+                
+                const model = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
+                const result = await model.generateContent(planningPrompt);
                 const planText = result.response.text();
 
                 currentAiPlan = planText;
@@ -1224,18 +1242,19 @@
                 const selectedText = monacoEditor.getModel().getValueInRange(selection);
                 const attachedFilesContext = getAttachedFilesContext();
 
-                // --- START: Sửa lỗi Prompt ---
                 const taskDescription = `NHIỆM VỤ: Chuyển đổi KẾ HOẠCH đã được cung cấp thành một danh sách các lệnh gọi hàm (function calls).
 QUY TẮC BẮT BUỘC:
 1.  Bạn PHẢI duyệt qua TỪNG BƯỚC (Step) trong KẾ HOẠCH.
 2.  Với MỖI BƯỚC, bạn PHẢI tạo ra một lệnh gọi hàm (function call) tương ứng.
 3.  Kết quả cuối cùng của bạn PHẢI là một danh sách chứa TẤT CẢ các lệnh gọi hàm được tạo ra từ kế hoạch.
 4.  KHÔNG được bỏ sót bất kỳ bước nào. KHÔNG được trả lời bằng văn bản.`;
-                // --- END: Sửa lỗi Prompt ---
                 
                 let planContext = '';
                 if (currentAiPlan) {
                     planContext = `\n\nMột kế hoạch đã được tạo ra trước đó. Hãy tuân thủ nghiêm ngặt kế hoạch này để thực hiện các thay đổi.\nKẾ HOẠCH:\n${currentAiPlan}\n`;
+                } else {
+                    // Nếu không có kế hoạch, yêu cầu AI tự tạo và thực thi
+                    planContext = `\n\nKhông có kế hoạch nào được cung cấp. Hãy tự phân tích yêu cầu của người dùng, tạo ra một kế hoạch các bước trong đầu và chuyển đổi kế hoạch đó thành một danh sách các lệnh gọi hàm.`;
                 }
 
                 let finalPrompt;
@@ -1760,7 +1779,8 @@ ${taskDescription}`;
 
                 Hãy trả lời hoàn toàn bằng tiếng Việt. Sử dụng định dạng Markdown để câu trả lời dễ đọc (dùng tiêu đề, danh sách, in đậm, v.v.).`;
 
-                const result = await aiModel.generateContent(prompt);
+                const model = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
+                const result = await model.generateContent(prompt);
                 const explanationHtml = marked.parse(result.response.text());
                 
                 await showAlert(`Giải thích cho thay đổi tại "${change.file}"`, explanationHtml);
@@ -1816,6 +1836,7 @@ ${taskDescription}`;
             spinner.classList.remove('hidden');
 
             try {
+                const model = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
                 const prompt = `Bạn là một chuyên gia tư vấn và phát triển web. Người dùng muốn tạo một dự án web mới. Dưới đây là cuộc trò chuyện của chúng ta. Hãy tiếp tục thảo luận, đặt câu hỏi để làm rõ yêu cầu, hoặc đưa ra gợi ý.
                 
                 Lịch sử trò chuyện:
@@ -1823,7 +1844,7 @@ ${taskDescription}`;
                 
                 Hãy trả lời một cách ngắn gọn, thân thiện để tiếp tục cuộc thảo luận.`;
 
-                const result = await aiModel.generateContent(prompt);
+                const result = await model.generateContent(prompt);
                 const aiResponse = result.response.text();
                 addMessageToNewProjectChat('ai', aiResponse);
             } catch (error) {
@@ -1949,8 +1970,9 @@ ${taskDescription}`;
                 ${modificationChatHistory.map(m => `${m.role}: ${m.text}`).join('\n')}
                 
                 Hãy trả lời một cách ngắn gọn, thân thiện để tiếp tục cuộc thảo luận.`;
-
-                const result = await aiModel.generateContent(prompt);
+                
+                const model = getGenerativeModel(getAI(app), { model: "gemini-2.5-flash" });
+                const result = await model.generateContent(prompt);
                 const aiResponse = result.response.text();
                 addMessageToModificationChat('ai', aiResponse);
             } catch (error) {
